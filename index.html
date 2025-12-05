@@ -1,0 +1,2193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connector Sync</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Load Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    /* Animation Utilities */
+    .animate-in { animation-duration: 150ms; --tw-enter-opacity: 0; --tw-enter-scale: 0.95; --tw-enter-rotate: 0; --tw-enter-translate-x: 0; --tw-enter-translate-y: 0; }
+    .fade-in { --tw-enter-opacity: 1; }
+    .zoom-in-95 { --tw-enter-scale: 1; }
+    .slide-in-from-bottom-4 { --tw-enter-translate-y: 0; }
+    .slide-in-from-top-2 { --tw-enter-translate-y: 0; }
+  </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module" data-presets="typescript,react">
+    import React, { useState, useEffect, useMemo, useRef } from 'https://esm.sh/react@18.2.0';
+    import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+    import { 
+      Activity, AlertCircle, AlertTriangle, ArrowRightLeft, Badge, Bell, Briefcase, 
+      Calendar, CheckCircle2, ChevronRight, Clock, Download, Eye, FileText, Flag, 
+      Inbox, Layers, LayoutDashboard, LogOut, Pause, Pencil, Play, Plus, ScrollText, 
+      Tag, Trash2, Undo2, Upload, Users, X, Zap 
+    } from 'https://esm.sh/lucide-react@0.300.0';
+
+    // --- types.ts ---
+    export type Role = 'ADMIN' | 'ENGINEER';
+    export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE' | 'PAUSED';
+    export type TaskPriority = 'HIGH' | 'MEDIUM' | 'LOW';
+    export type ProjectPhase = 'RFQ' | 'DESIGN' | 'TOOLING' | 'VALIDATION' | 'SOP';
+
+    export interface User {
+      id: string;
+      name: string;
+      employeeId: string;
+      role: Role;
+      avatarColor: string;
+    }
+
+    export interface Category {
+      id: string;
+      name: string;
+    }
+
+    export interface TaskLog {
+      id: string;
+      date: string;
+      content: string;
+      hoursSpent: number;
+    }
+
+    export interface Task {
+      id: string;
+      userId: string;
+      title: string;
+      description: string;
+      receiveDate: string;
+      deadline: string;
+      startDate?: string;
+      estimatedHours: number;
+      actualHours: number;
+      status: TaskStatus;
+      completedDate?: string;
+      logs: TaskLog[];
+      priority: TaskPriority;
+      phase: ProjectPhase;
+      categoryId: string;
+      transferredFrom?: string;
+    }
+
+    export interface NotificationItem {
+      id: string;
+      type: 'OVERDUE' | 'DUE_SOON' | 'REVIEW_NEEDED' | 'TRANSFER_RECEIVED';
+      message: string;
+      taskId: string;
+      userName?: string;
+      action?: () => void;
+    }
+
+    // --- constants.ts ---
+    export const INITIAL_USERS: User[] = [
+      { id: 'u1', name: 'Manager (Admin)', employeeId: 'ADMIN-001', role: 'ADMIN', avatarColor: 'bg-blue-500' },
+      { id: 'u2', name: 'Alex Chen', employeeId: 'ENG-001', role: 'ENGINEER', avatarColor: 'bg-emerald-500' },
+      { id: 'u3', name: 'Sarah Lin', employeeId: 'ENG-002', role: 'ENGINEER', avatarColor: 'bg-purple-500' },
+      { id: 'u4', name: 'Mike Wang', employeeId: 'ENG-003', role: 'ENGINEER', avatarColor: 'bg-orange-500' },
+    ];
+
+    export const INITIAL_CATEGORIES: Category[] = [
+      { id: 'c1', name: '機構設計 (ME)' },
+      { id: 'c2', name: '電子電路 (EE)' },
+      { id: 'c3', name: '文件/行政 (Doc)' },
+      { id: 'c4', name: '會議 (Meeting)' },
+      { id: 'c5', name: '測試驗證 (Test)' }
+    ];
+
+    export const INITIAL_TASKS: Task[] = [
+      {
+        id: 't1',
+        userId: 'u2',
+        title: 'Type-C Gen3 設計初稿',
+        description: '完成 Pin 腳定義與初步 3D 堆疊，需確認阻抗匹配。',
+        receiveDate: new Date().toISOString().split('T')[0],
+        deadline: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
+        startDate: new Date().toISOString().split('T')[0],
+        estimatedHours: 16,
+        actualHours: 4,
+        status: 'IN_PROGRESS',
+        logs: [
+          { id: 'l1', date: new Date().toISOString().split('T')[0], content: '完成 Pin 定義', hoursSpent: 4 }
+        ],
+        priority: 'HIGH',
+        phase: 'DESIGN',
+        categoryId: 'c1'
+      },
+      {
+        id: 't2',
+        userId: 'u3',
+        title: '模具公差分析報告',
+        description: '針對上週試模結果進行公差檢討，確認 Cpk 值。',
+        receiveDate: new Date().toISOString().split('T')[0],
+        deadline: new Date().toISOString().split('T')[0],
+        estimatedHours: 4,
+        actualHours: 0,
+        status: 'TODO',
+        logs: [],
+        priority: 'MEDIUM',
+        phase: 'TOOLING',
+        categoryId: 'c5'
+      }
+    ];
+
+    export const AVATAR_COLORS = [
+      'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-orange-500', 
+      'bg-indigo-500', 'bg-pink-500', 'bg-teal-500', 'bg-cyan-500'
+    ];
+
+    // --- utils.ts ---
+    export const generateId = () => Math.random().toString(36).substr(2, 9);
+
+    export const getRandomColor = () => AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+
+    export const getStatusColor = (status: TaskStatus) => {
+      switch (status) {
+        case 'TODO': return 'bg-slate-100 text-slate-700 border-slate-200';
+        case 'IN_PROGRESS': return 'bg-blue-50 text-blue-700 border-blue-200';
+        case 'PAUSED': return 'bg-orange-50 text-orange-700 border-orange-200';
+        case 'REVIEW': return 'bg-amber-50 text-amber-700 border-amber-200';
+        case 'DONE': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+        default: return 'bg-gray-100';
+      }
+    };
+
+    export const getStatusLabel = (status: TaskStatus) => {
+      switch (status) {
+        case 'TODO': return '待處理';
+        case 'IN_PROGRESS': return '進行中';
+        case 'PAUSED': return '暫停中';
+        case 'REVIEW': return '審核中';
+        case 'DONE': return '已完成';
+        default: return status;
+      }
+    };
+
+    export const getPriorityColor = (priority: TaskPriority) => {
+      switch (priority) {
+        case 'HIGH': return 'text-red-600 bg-red-50 border-red-100';
+        case 'MEDIUM': return 'text-amber-600 bg-amber-50 border-amber-100';
+        case 'LOW': return 'text-slate-600 bg-slate-50 border-slate-100';
+      }
+    };
+
+    export const getPhaseLabel = (phase: ProjectPhase) => {
+      switch (phase) {
+        case 'RFQ': return 'RFQ/概念';
+        case 'DESIGN': return '產品設計';
+        case 'TOOLING': return '模具/製程';
+        case 'VALIDATION': return 'DV/PV驗證';
+        case 'SOP': return '量產導入';
+      }
+    };
+
+    // --- components/Shared.tsx ---
+    interface CardProps {
+      children?: React.ReactNode;
+      className?: string;
+      style?: React.CSSProperties;
+    }
+
+    export const Card: React.FC<CardProps> = ({ children, className = '', style }) => (
+      <div className={`bg-white rounded-xl border border-slate-200 shadow-sm transition-all duration-300 hover:shadow-md ${className}`} style={style}>
+        {children}
+      </div>
+    );
+
+    interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+      variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+    }
+
+    export const Button: React.FC<ButtonProps> = ({ onClick, children, variant = 'primary', className = '', type = 'button', disabled = false, ...props }) => {
+      const base = "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]";
+      const variants = {
+        primary: "bg-blue-600 text-white hover:bg-blue-700 shadow-sm shadow-blue-600/20",
+        secondary: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+        ghost: "text-slate-600 hover:bg-slate-100",
+        danger: "bg-red-50 text-red-600 hover:bg-red-100"
+      };
+      return (
+        <button onClick={onClick} type={type} disabled={disabled} className={`${base} ${variants[variant]} ${className}`} {...props}>
+          {children}
+        </button>
+      );
+    };
+
+    export const StatusBadge = ({ status }: { status: TaskStatus }) => (
+      <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border transition-colors duration-300 ${getStatusColor(status)}`}>
+        {getStatusLabel(status)}
+      </span>
+    );
+
+    interface ModalProps {
+      isOpen: boolean;
+      onClose: () => void;
+      title: string;
+      children?: React.ReactNode;
+      maxWidth?: string;
+    }
+
+    export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, maxWidth = "max-w-lg" }) => {
+      if (!isOpen) return null;
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+          <div className={`bg-white rounded-2xl shadow-2xl w-full ${maxWidth} overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 fade-in duration-300 ease-out flex flex-col max-h-[90vh]`}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+              <h3 className="font-bold text-lg text-slate-900">{title}</h3>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              {children}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    export const ConfirmModal = ({ 
+      isOpen, 
+      onClose, 
+      onConfirm, 
+      title, 
+      message, 
+      confirmText = '確認', 
+      cancelText = '取消', 
+      isDanger = false 
+    }: { 
+      isOpen: boolean; 
+      onClose: () => void; 
+      onConfirm: () => void; 
+      title: string; 
+      message: React.ReactNode; 
+      confirmText?: string; 
+      cancelText?: string; 
+      isDanger?: boolean;
+    }) => {
+      if (!isOpen) return null;
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title={title}>
+          <div className="space-y-6">
+            <div className="flex items-start gap-4">
+              <div className={`p-3 rounded-full shrink-0 ${isDanger ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="text-slate-600 text-sm leading-relaxed">{message}</div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="secondary" onClick={onClose}>{cancelText}</Button>
+              <Button 
+                variant={isDanger ? 'danger' : 'primary'} 
+                onClick={() => { onConfirm(); onClose(); }}
+              >
+                {confirmText}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      );
+    };
+
+    // --- components/NotificationBell.tsx ---
+    interface NotificationBellProps {
+      tasks: Task[];
+      currentUser: User;
+      allUsers?: User[];
+      onDismissAlert: (taskId: string) => void;
+    }
+
+    export const NotificationBell: React.FC<NotificationBellProps> = ({ tasks, currentUser, allUsers, onDismissAlert }) => {
+      const [isOpen, setIsOpen] = useState(false);
+      const dropdownRef = useRef<HTMLDivElement>(null);
+
+      useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+          if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            setIsOpen(false);
+          }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+          document.removeEventListener("mousedown", handleClickOutside);
+        };
+      }, []);
+
+      const notifications: NotificationItem[] = useMemo(() => {
+        const alerts: NotificationItem[] = [];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const visibleTasks = currentUser.role === 'ADMIN' 
+          ? tasks 
+          : tasks.filter(t => t.userId === currentUser.id);
+
+        visibleTasks.forEach(task => {
+          // 1. Transfer Notification (Highest Priority)
+          if (task.transferredFrom && task.userId === currentUser.id) {
+            const sender = allUsers?.find(u => u.id === task.transferredFrom)?.name || 'Unknown';
+            alerts.push({
+              id: `transfer-${task.id}`,
+              type: 'TRANSFER_RECEIVED',
+              message: `收到來自 ${sender} 的轉派任務: "${task.title}"`,
+              taskId: task.id,
+              action: () => onDismissAlert(task.id)
+            });
+          }
+
+          if (task.status === 'DONE') return;
+
+          const deadline = new Date(task.deadline);
+          deadline.setHours(0, 0, 0, 0);
+          
+          const diffTime = deadline.getTime() - today.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          const userName = currentUser.role === 'ADMIN' && allUsers 
+            ? allUsers.find(u => u.id === task.userId)?.name 
+            : undefined;
+          
+          const prefix = userName ? `[${userName}] ` : '';
+
+          if (diffDays < 0) {
+            alerts.push({
+              id: `overdue-${task.id}`,
+              type: 'OVERDUE',
+              message: `${prefix}任務 "${task.title}" 已逾期 ${Math.abs(diffDays)} 天`,
+              taskId: task.id,
+              userName
+            });
+          } else if (diffDays >= 0 && diffDays <= 1) {
+            alerts.push({
+              id: `soon-${task.id}`,
+              type: 'DUE_SOON',
+              message: `${prefix}任務 "${task.title}" ${diffDays === 0 ? '今天' : '明天'}到期`,
+              taskId: task.id,
+              userName
+            });
+          }
+          if (task.actualHours > task.estimatedHours) {
+             alerts.push({
+              id: `review-${task.id}`,
+              type: 'REVIEW_NEEDED',
+              message: `${prefix}任務 "${task.title}" 超出預估工時`,
+              taskId: task.id,
+              userName
+            });
+          }
+        });
+
+        return alerts.sort((a, b) => {
+          const priority = { 'TRANSFER_RECEIVED': 0, 'OVERDUE': 1, 'REVIEW_NEEDED': 2, 'DUE_SOON': 3 };
+          return priority[a.type] - priority[b.type];
+        });
+      }, [tasks, currentUser, allUsers, onDismissAlert]);
+
+      return (
+        <div className="relative" ref={dropdownRef}>
+          <button 
+            onClick={() => setIsOpen(!isOpen)}
+            className="relative p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors"
+          >
+            <Bell className="w-6 h-6" />
+            {notifications.length > 0 && (
+              <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
+            )}
+          </button>
+
+          {isOpen && (
+            <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                <h3 className="font-bold text-slate-800 text-sm">通知中心</h3>
+                <span className="text-xs bg-white px-2 py-0.5 rounded-full border border-slate-200 text-slate-500">
+                  {notifications.length}
+                </span>
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 text-sm">
+                    <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p>目前沒有待辦警示</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-50">
+                    {notifications.map(item => (
+                      <div key={item.id} className="p-3 hover:bg-slate-50 transition-colors flex gap-3 items-start animate-in fade-in duration-300">
+                        <div className="mt-0.5 shrink-0">
+                          {item.type === 'TRANSFER_RECEIVED' && <Inbox className="w-4 h-4 text-blue-500" />}
+                          {item.type === 'OVERDUE' && <AlertCircle className="w-4 h-4 text-red-500" />}
+                          {item.type === 'DUE_SOON' && <Clock className="w-4 h-4 text-amber-500" />}
+                          {item.type === 'REVIEW_NEEDED' && <AlertTriangle className="w-4 h-4 text-orange-500" />}
+                        </div>
+                        <div className="flex-1">
+                          <p className={`text-xs font-medium ${item.type === 'OVERDUE' ? 'text-red-600' : 'text-slate-700'}`}>
+                            {item.message}
+                          </p>
+                        </div>
+                        {item.type === 'TRANSFER_RECEIVED' && item.action && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); item.action!(); }}
+                            className="text-slate-300 hover:text-green-500"
+                            title="標記為已讀"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // --- components/BusinessModals.tsx ---
+    
+    // --- Transfer Modal ---
+    export const TransferModal = ({ isOpen, onClose, onConfirm, users, taskTitle }: { isOpen: boolean; onClose: () => void; onConfirm: (newUserId: string) => void; users: User[]; taskTitle: string }) => {
+      const [selectedUserId, setSelectedUserId] = useState(users[0]?.id || '');
+
+      useEffect(() => {
+        if (users.length > 0) {
+          if (!users.find(u => u.id === selectedUserId)) {
+             setSelectedUserId(users[0]?.id || '');
+          }
+        }
+      }, [users, isOpen, selectedUserId]);
+
+      const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (selectedUserId) {
+          onConfirm(selectedUserId);
+          onClose();
+        }
+      };
+
+      if (!isOpen) return null;
+
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title="轉派任務">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                將任務 <span className="font-bold text-slate-900">"{taskTitle}"</span> 轉派給：
+              </label>
+              {users.length > 0 ? (
+                <select
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={selectedUserId}
+                  onChange={e => setSelectedUserId(e.target.value)}
+                >
+                  {users.map(user => (
+                    <option key={user.id} value={user.id}>
+                      {user.name} ({user.employeeId})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="p-3 bg-slate-50 text-slate-500 text-sm rounded-lg text-center">
+                  沒有其他工程師可供轉派
+                </div>
+              )}
+            </div>
+            <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 flex gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+              <p className="text-xs text-amber-700">
+                注意：轉派後，此任務將會從您的列表中移除，並出現在對方的任務列表中。
+              </p>
+            </div>
+            <div className="pt-2 flex justify-end gap-3">
+              <Button variant="secondary" onClick={onClose}>取消</Button>
+              <Button type="submit" disabled={users.length === 0}>確認轉派</Button>
+            </div>
+          </form>
+        </Modal>
+      );
+    };
+
+    // --- Extracted TaskItem Component ---
+    interface TaskItemProps {
+      task: Task;
+      onTransferTask: (task: Task) => void;
+      categories: Category[];
+    }
+
+    const TaskItem: React.FC<TaskItemProps> = ({ task, onTransferTask, categories }) => {
+      const categoryName = categories.find(c => c.id === task.categoryId)?.name || '未分類';
+      
+      return (
+        <div className="border border-slate-100 rounded-lg p-4 mb-3 bg-slate-50/50 relative animate-in fade-in slide-in-from-bottom-2 duration-500 group">
+          <div className="absolute top-4 right-4 text-xs font-bold text-slate-400 border border-slate-200 px-2 py-0.5 rounded-full bg-white">
+            {categoryName}
+          </div>
+          
+          {/* Admin Transfer Button (visible on hover) */}
+          <div className="absolute top-4 right-10 md:right-4 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+             <button 
+               onClick={() => onTransferTask(task)}
+               className="p-1.5 bg-white text-slate-400 hover:text-blue-600 border border-slate-200 rounded shadow-sm hover:shadow-md transition-all"
+               title="轉派此任務"
+             >
+               <ArrowRightLeft className="w-4 h-4" />
+             </button>
+          </div>
+      
+          <div className="flex items-start justify-between mb-2 pr-20">
+            <div className="flex flex-wrap items-center gap-2">
+               <StatusBadge status={task.status} />
+               <span className={`text-xs px-2 py-0.5 rounded-full border ${getPriorityColor(task.priority)} font-medium`}>
+                 {task.priority === 'HIGH' ? 'High' : task.priority === 'MEDIUM' ? 'Med' : 'Low'}
+               </span>
+               <span className="font-bold text-slate-900">{task.title}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
+             <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">
+               <Layers className="w-3 h-3" /> {getPhaseLabel(task.phase)}
+             </span>
+             <span>期限: {task.deadline}</span>
+          </div>
+          <p className="text-sm text-slate-600 mb-3">{task.description}</p>
+          
+          <div className="flex items-center gap-4 text-xs text-slate-500 mb-3">
+            <span>預計: {task.estimatedHours}h</span>
+            <span className={task.actualHours > task.estimatedHours ? 'text-red-500 font-bold' : ''}>實際: {task.actualHours}h</span>
+          </div>
+      
+          {task.logs.length > 0 ? (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-slate-400 uppercase">工作日誌紀錄</div>
+              {task.logs.map(log => (
+                <div key={log.id} className="text-xs bg-white p-2 rounded border border-slate-100 flex gap-2">
+                   <span className="text-slate-400 shrink-0 font-mono">{log.date}</span>
+                   <span className="text-slate-700">{log.content}</span>
+                   <span className="text-slate-400 ml-auto shrink-0">+{log.hoursSpent}h</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400 italic">尚未填寫日誌</div>
+          )}
+        </div>
+      );
+    };
+
+    // --- User Detail Modal ---
+    export const UserDetailModal = ({ isOpen, onClose, user, tasks, onTransferTask, categories }: { isOpen: boolean; onClose: () => void; user: User | null; tasks: Task[]; onTransferTask: (task: Task) => void; categories: Category[] }) => {
+      if (!isOpen || !user) return null;
+
+      const userTasks = tasks.filter(t => t.userId === user.id);
+      const activeTasks = userTasks.filter(t => t.status !== 'DONE');
+      const doneTasks = userTasks.filter(t => t.status === 'DONE');
+
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`${user.name} 的工作詳情`} maxWidth="max-w-3xl">
+          <div className="space-y-6">
+            <div>
+              <h4 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+                <Activity className="w-4 h-4 text-blue-500" /> 進行中任務 ({activeTasks.length})
+              </h4>
+              {activeTasks.length > 0 ? (
+                activeTasks.map(task => <TaskItem key={task.id} task={task} onTransferTask={onTransferTask} categories={categories} />)
+              ) : (
+                <div className="text-sm text-slate-400 py-2">無進行中任務</div>
+              )}
+            </div>
+
+            <div>
+               <h4 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" /> 近期已完成 ({doneTasks.length})
+              </h4>
+              {doneTasks.length > 0 ? (
+                doneTasks.slice(0, 3).map(task => <TaskItem key={task.id} task={task} onTransferTask={onTransferTask} categories={categories} />)
+              ) : (
+                <div className="text-sm text-slate-400 py-2">尚無完成紀錄</div>
+              )}
+            </div>
+          </div>
+        </Modal>
+      );
+    };
+
+    // --- User Edit/Create Modal ---
+    export const UserModal = ({ isOpen, onClose, onSubmit, editingUser }: { isOpen: boolean; onClose: () => void; onSubmit: (data: Partial<User>) => void; editingUser?: User | null }) => {
+      const [formData, setFormData] = useState({
+        name: '',
+        employeeId: '',
+        role: 'ENGINEER' as Role
+      });
+
+      useEffect(() => {
+        if (editingUser) {
+          setFormData({
+            name: editingUser.name,
+            employeeId: editingUser.employeeId,
+            role: editingUser.role
+          });
+        } else {
+          setFormData({
+            name: '',
+            employeeId: '',
+            role: 'ENGINEER'
+          });
+        }
+      }, [editingUser, isOpen]);
+
+      const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSubmit(formData);
+        onClose();
+      };
+
+      if (!isOpen) return null;
+
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title={editingUser ? "編輯成員資料" : "新增團隊成員"}>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">姓名</label>
+              <input 
+                required
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                value={formData.name}
+                onChange={e => setFormData({...formData, name: e.target.value})}
+                placeholder="例如: 王小明"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">工號 (Employee ID)</label>
+              <input 
+                required
+                type="text"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                value={formData.employeeId}
+                onChange={e => setFormData({...formData, employeeId: e.target.value})}
+                placeholder="例如: ENG-001"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">角色權限</label>
+              <select 
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                value={formData.role}
+                onChange={e => setFormData({...formData, role: e.target.value as Role})}
+              >
+                <option value="ENGINEER">Engineer (工程師)</option>
+                <option value="ADMIN">Admin (管理者)</option>
+              </select>
+            </div>
+            <div className="pt-2 flex justify-end gap-3">
+              <Button variant="secondary" onClick={onClose}>取消</Button>
+              <Button type="submit">{editingUser ? "儲存變更" : "建立成員"}</Button>
+            </div>
+          </form>
+        </Modal>
+      );
+    };
+
+    // --- Task Edit/Create Modal ---
+    export const TaskModal = ({ 
+      isOpen, 
+      onClose, 
+      onSubmit, 
+      editingTask, 
+      categories,
+      users 
+    }: { 
+      isOpen: boolean; 
+      onClose: () => void; 
+      onSubmit: (data: Partial<Task>) => void; 
+      editingTask?: Task | null;
+      categories: Category[];
+      users?: User[]; // If provided, shows "Assign To" field (Admin Mode)
+    }) => {
+      const [formData, setFormData] = useState({
+        title: '',
+        description: '',
+        receiveDate: new Date().toISOString().split('T')[0],
+        deadline: '',
+        estimatedHours: 0,
+        priority: 'MEDIUM' as TaskPriority,
+        phase: 'DESIGN' as ProjectPhase,
+        categoryId: '',
+        userId: ''
+      });
+      const [showConfirm, setShowConfirm] = useState(false);
+
+      useEffect(() => {
+        if (editingTask) {
+          setFormData({
+            title: editingTask.title,
+            description: editingTask.description,
+            receiveDate: editingTask.receiveDate,
+            deadline: editingTask.deadline,
+            estimatedHours: editingTask.estimatedHours,
+            priority: editingTask.priority || 'MEDIUM',
+            phase: editingTask.phase || 'DESIGN',
+            categoryId: editingTask.categoryId || (categories[0]?.id || ''),
+            userId: editingTask.userId
+          });
+        } else {
+          setFormData({
+            title: '',
+            description: '',
+            receiveDate: new Date().toISOString().split('T')[0],
+            deadline: '',
+            estimatedHours: 0,
+            priority: 'MEDIUM',
+            phase: 'DESIGN',
+            categoryId: categories[0]?.id || '',
+            userId: users ? (users[0]?.id || '') : ''
+          });
+        }
+      }, [editingTask, isOpen, categories, users]);
+
+      const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (editingTask) {
+          setShowConfirm(true);
+        } else {
+          onSubmit(formData);
+          onClose();
+        }
+      };
+
+      const handleConfirmEdit = () => {
+        onSubmit(formData);
+        setShowConfirm(false);
+        onClose();
+      };
+
+      if (!isOpen) return null;
+
+      return (
+        <>
+          <Modal isOpen={isOpen} onClose={onClose} title={editingTask ? "編輯任務" : "建立新任務"}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-12 gap-4">
+                <div className="col-span-8">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">任務名稱</label>
+                  <input 
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                    value={formData.title}
+                    onChange={e => setFormData({...formData, title: e.target.value})}
+                    placeholder="例如: Type-C 結構設計"
+                  />
+                </div>
+                <div className="col-span-4">
+                   <label className="block text-sm font-medium text-slate-700 mb-1">優先級 (Risk)</label>
+                   <select
+                     className="w-full px-3 py-2 border border-slate-300 rounded-lg transition-colors duration-200"
+                     value={formData.priority}
+                     onChange={e => setFormData({...formData, priority: e.target.value as TaskPriority})}
+                   >
+                     <option value="HIGH">High (高)</option>
+                     <option value="MEDIUM">Medium (中)</option>
+                     <option value="LOW">Low (低)</option>
+                   </select>
+                </div>
+              </div>
+
+              {/* Admin Assignment Field */}
+              {users && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">指派給 (Assign To)</label>
+                  <select
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                    value={formData.userId}
+                    onChange={e => setFormData({...formData, userId: e.target.value})}
+                  >
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.employeeId})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">專案階段 (Maturity)</label>
+                  <select
+                     className="w-full px-3 py-2 border border-slate-300 rounded-lg transition-colors duration-200"
+                     value={formData.phase}
+                     onChange={e => setFormData({...formData, phase: e.target.value as ProjectPhase})}
+                   >
+                     <option value="RFQ">RFQ / 概念 (RG0)</option>
+                     <option value="DESIGN">產品設計 (RG1/2)</option>
+                     <option value="TOOLING">模具/製程 (RG3)</option>
+                     <option value="VALIDATION">驗證 DV/PV (RG4/5)</option>
+                     <option value="SOP">量產導入 (RG6/7)</option>
+                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">任務類別</label>
+                  <select
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg transition-colors duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={formData.categoryId}
+                    onChange={e => setFormData({...formData, categoryId: e.target.value})}
+                  >
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">接收日期</label>
+                  <input 
+                    required
+                    type="date"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg transition-colors duration-200"
+                    value={formData.receiveDate}
+                    onChange={e => setFormData({...formData, receiveDate: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">預計完成日</label>
+                  <input 
+                    required
+                    type="date"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg transition-colors duration-200"
+                    value={formData.deadline}
+                    onChange={e => setFormData({...formData, deadline: e.target.value})}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">預計工時 (小時)</label>
+                <input 
+                  required
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg transition-colors duration-200"
+                  value={formData.estimatedHours}
+                  onChange={e => setFormData({...formData, estimatedHours: parseFloat(e.target.value)})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">任務描述 / 備註</label>
+                <textarea 
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg h-24 transition-colors duration-200"
+                  value={formData.description}
+                  onChange={e => setFormData({...formData, description: e.target.value})}
+                  placeholder="請輸入詳細的工作內容..."
+                />
+              </div>
+              <div className="pt-2 flex justify-end gap-3">
+                <Button variant="secondary" onClick={onClose}>取消</Button>
+                <Button type="submit">{editingTask ? "更新任務" : "建立任務"}</Button>
+              </div>
+            </form>
+          </Modal>
+
+          <ConfirmModal 
+            isOpen={showConfirm}
+            onClose={() => setShowConfirm(false)}
+            onConfirm={handleConfirmEdit}
+            title="確認修改"
+            message="您確定要儲存對此任務的變更嗎？"
+            confirmText="儲存變更"
+          />
+        </>
+      );
+    };
+
+    // --- Log Modal ---
+    export const LogModal = ({ isOpen, onClose, onSubmit, taskTitle }: { isOpen: boolean; onClose: () => void; onSubmit: (data: { content: string; hoursSpent: number }) => void; taskTitle: string }) => {
+      const [content, setContent] = useState('');
+      const [hoursSpent, setHoursSpent] = useState(0);
+
+      const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSubmit({ content, hoursSpent });
+        onClose();
+        setContent('');
+        setHoursSpent(0);
+      };
+
+      if (!isOpen) return null;
+
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`填寫日誌: ${taskTitle}`}>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">今日進度說明</label>
+              <textarea 
+                required
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg h-32 transition-colors duration-200"
+                value={content}
+                onChange={e => setContent(e.target.value)}
+                placeholder="今天完成了什麼部分..."
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">投入時數 (小時)</label>
+              <input 
+                required
+                type="number"
+                min="0"
+                step="0.5"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg transition-colors duration-200"
+                value={hoursSpent}
+                onChange={e => setHoursSpent(parseFloat(e.target.value))}
+              />
+            </div>
+            <div className="pt-2 flex justify-end gap-3">
+              <Button variant="secondary" onClick={onClose}>取消</Button>
+              <Button type="submit">提交日誌</Button>
+            </div>
+          </form>
+        </Modal>
+      );
+    };
+
+    // --- Category Management Modal ---
+    export const CategoryModal = ({ isOpen, onClose, categories, onAddCategory, onDeleteCategory }: { 
+      isOpen: boolean; 
+      onClose: () => void; 
+      categories: Category[]; 
+      onAddCategory: (name: string) => void;
+      onDeleteCategory: (id: string) => void;
+    }) => {
+      const [newCategory, setNewCategory] = useState('');
+
+      const handleAdd = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (newCategory.trim()) {
+          onAddCategory(newCategory.trim());
+          setNewCategory('');
+        }
+      };
+
+      if (!isOpen) return null;
+
+      return (
+        <Modal isOpen={isOpen} onClose={onClose} title="管理任務類別">
+          <div className="space-y-6">
+            <form onSubmit={handleAdd} className="flex gap-2">
+              <input 
+                className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={newCategory}
+                onChange={e => setNewCategory(e.target.value)}
+                placeholder="輸入新類別名稱..."
+              />
+              <Button type="submit" disabled={!newCategory.trim()}>
+                <Plus className="w-4 h-4" /> 新增
+              </Button>
+            </form>
+
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {categories.map(cat => (
+                <div key={cat.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <span className="text-slate-700 font-medium">{cat.name}</span>
+                  <button 
+                    onClick={() => onDeleteCategory(cat.id)}
+                    className="text-slate-400 hover:text-red-500 p-1"
+                    title="刪除類別"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              {categories.length === 0 && (
+                <div className="text-center text-slate-400 py-4 text-sm">無類別資料</div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button variant="secondary" onClick={onClose}>關閉</Button>
+            </div>
+          </div>
+        </Modal>
+      );
+    };
+
+    // --- components/AdminDashboard.tsx ---
+    interface AdminDashboardProps {
+      users: User[];
+      tasks: Task[];
+      categories: Category[];
+      onAddUser: (data: any) => void;
+      onUpdateUser: (id: string, data: Partial<User>) => void;
+      onRemoveUser: (userId: string) => void;
+      onImportData: (file: File) => void;
+      onExportData: () => void;
+      onTransferTask: (taskId: string, newUserId: string, fromUserId: string) => void;
+      onDismissAlert: (taskId: string) => void;
+      onAddTask: (task: any) => void;
+      onAddCategory: (name: string) => void;
+      onDeleteCategory: (id: string) => void;
+    }
+
+    const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
+      users, 
+      tasks,
+      categories,
+      onAddUser,
+      onUpdateUser,
+      onRemoveUser,
+      onImportData,
+      onExportData,
+      onTransferTask,
+      onDismissAlert,
+      onAddTask,
+      onAddCategory,
+      onDeleteCategory
+    }) => {
+      const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+      const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+      const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+      
+      const [editingUser, setEditingUser] = useState<User | null>(null);
+      const [userToDelete, setUserToDelete] = useState<string | null>(null);
+      const [viewingUser, setViewingUser] = useState<User | null>(null);
+      
+      // State for Admin-initiated transfer
+      const [taskToTransfer, setTaskToTransfer] = useState<Task | null>(null);
+      
+      const [filterType, setFilterType] = useState<'ALL' | 'OVERLOADED' | 'FREE'>('ALL');
+
+      const fileInputRef = useRef<HTMLInputElement>(null);
+
+      // Filter only engineers for admin dashboard transfer/assign
+      const engineersOnly = useMemo(() => users.filter(u => u.role === 'ENGINEER'), [users]);
+
+      // Aggregate Stats
+      const globalStats = useMemo(() => {
+        let totalActive = 0;
+        let totalOverdue = 0;
+        let completedThisWeek = 0;
+        let totalLoadRate = 0;
+        let engineerCount = 0;
+        
+        // Project Phase Stats
+        const phaseStats: Record<string, number> = { RFQ: 0, DESIGN: 0, TOOLING: 0, VALIDATION: 0, SOP: 0 };
+        const priorityStats: Record<string, number> = { HIGH: 0, MEDIUM: 0, LOW: 0 };
+
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(today.getDate() - 7);
+
+        tasks.forEach(task => {
+          if (task.status !== 'DONE') {
+            totalActive++;
+            // Phase
+            if (task.phase) phaseStats[task.phase] = (phaseStats[task.phase] || 0) + 1;
+            // Priority
+            if (task.priority) priorityStats[task.priority] = (priorityStats[task.priority] || 0) + 1;
+            
+            // Overdue
+            const deadline = new Date(task.deadline);
+            deadline.setHours(0,0,0,0);
+            if (deadline < today) totalOverdue++;
+          } else {
+            const completedDate = task.completedDate ? new Date(task.completedDate) : null;
+            if (completedDate && completedDate >= oneWeekAgo) {
+              completedThisWeek++;
+            }
+          }
+        });
+
+        // Calculate individual Engineer stats for the grid
+        const engineerStats = users.filter(u => u.role === 'ENGINEER').map(user => {
+          engineerCount++;
+          const userTasks = tasks.filter(t => t.userId === user.id && t.status !== 'DONE');
+          const totalEstimated = userTasks.reduce((acc, t) => acc + t.estimatedHours, 0);
+          
+          let maxDays = 1;
+          if (userTasks.length > 0) {
+            const dates = userTasks.map(t => new Date(t.deadline).getTime());
+            const maxDate = Math.max(...dates);
+            const diffTime = Math.abs(maxDate - today.getTime());
+            maxDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+          }
+          
+          const dailyLoad = totalEstimated / maxDays;
+          const loadRate = Math.min((dailyLoad / 8) * 100, 100);
+          totalLoadRate += loadRate;
+
+          return {
+            user,
+            activeTasks: userTasks.length,
+            totalEstimated,
+            loadRate,
+            isOverloaded: dailyLoad > 8
+          };
+        });
+
+        const avgLoad = engineerCount > 0 ? Math.round(totalLoadRate / engineerCount) : 0;
+
+        return {
+          totalActive,
+          totalOverdue,
+          completedThisWeek,
+          avgLoad,
+          phaseStats,
+          priorityStats,
+          engineerStats
+        };
+      }, [users, tasks]);
+
+      const filteredStats = useMemo(() => {
+        if (filterType === 'ALL') return globalStats.engineerStats;
+        if (filterType === 'OVERLOADED') return globalStats.engineerStats.filter(s => s.loadRate > 80);
+        if (filterType === 'FREE') return globalStats.engineerStats.filter(s => s.loadRate < 20);
+        return globalStats.engineerStats;
+      }, [globalStats, filterType]);
+
+      const handleOpenEditUser = (user: User) => {
+        setEditingUser(user);
+        setIsUserModalOpen(true);
+      };
+
+      const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+          onImportData(file);
+        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      };
+
+      // Filter out the current owner for the transfer modal
+      const potentialTransferUsers = useMemo(() => {
+        if (!taskToTransfer) return [];
+        // Admin can transfer to any engineer except current owner
+        return engineersOnly.filter(u => u.id !== taskToTransfer.userId);
+      }, [engineersOnly, taskToTransfer]);
+
+      // Current admin user (mock)
+      const currentAdmin = users.find(u => u.role === 'ADMIN') || users[0];
+
+      return (
+        <div className="space-y-8 pb-10">
+          {/* Header Area */}
+          <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">總覽儀表板 (Dashboard)</h1>
+              <p className="text-slate-500 text-sm">Connector Sync • {new Date().toISOString().split('T')[0]}</p>
+            </div>
+            
+            <div className="flex gap-2 items-center flex-wrap">
+               <NotificationBell 
+                 tasks={tasks} 
+                 currentUser={currentAdmin} 
+                 allUsers={users}
+                 onDismissAlert={onDismissAlert}
+               />
+               <div className="w-px h-6 bg-slate-200 mx-1 hidden md:block"></div>
+               <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileChange} 
+                accept=".json" 
+                className="hidden" 
+              />
+              <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
+                <Upload className="w-4 h-4" /> 匯入
+              </Button>
+              <Button variant="secondary" onClick={onExportData}>
+                <Download className="w-4 h-4" /> 匯出
+              </Button>
+              <Button variant="secondary" onClick={() => setIsCategoryModalOpen(true)}>
+                <Tag className="w-4 h-4" /> 類別
+              </Button>
+              <Button onClick={() => { setIsTaskModalOpen(true); }}>
+                <Briefcase className="w-4 h-4" /> 派工
+              </Button>
+              <Button onClick={() => { setEditingUser(null); setIsUserModalOpen(true); }}>
+                <Plus className="w-4 h-4" /> 成員
+              </Button>
+            </div>
+          </header>
+
+          {/* Level 1: KPI Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="p-4 flex flex-col justify-between h-24 bg-gradient-to-br from-blue-50 to-white">
+              <div className="text-slate-500 text-xs font-semibold uppercase flex items-center gap-1">
+                <Activity className="w-3 h-3" /> 團隊平均負載
+              </div>
+              <div className="text-2xl font-bold text-slate-800">{globalStats.avgLoad}%</div>
+              <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2">
+                 <div className={`h-1.5 rounded-full ${globalStats.avgLoad > 80 ? 'bg-red-500' : 'bg-blue-500'}`} style={{width: `${globalStats.avgLoad}%`}}></div>
+              </div>
+            </Card>
+            
+            <Card className="p-4 flex flex-col justify-between h-24 bg-gradient-to-br from-red-50 to-white">
+              <div className="text-red-500 text-xs font-semibold uppercase flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" /> 逾期 / 急件
+              </div>
+              <div className="text-2xl font-bold text-red-600">{globalStats.totalOverdue} <span className="text-sm text-slate-400 font-normal">tasks</span></div>
+            </Card>
+
+            <Card className="p-4 flex flex-col justify-between h-24 bg-gradient-to-br from-emerald-50 to-white">
+              <div className="text-emerald-600 text-xs font-semibold uppercase flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" /> 本週完成
+              </div>
+              <div className="text-2xl font-bold text-emerald-700">{globalStats.completedThisWeek} <span className="text-sm text-slate-400 font-normal">tasks</span></div>
+            </Card>
+
+            <Card className="p-4 flex flex-col justify-between h-24 bg-gradient-to-br from-indigo-50 to-white">
+              <div className="text-indigo-600 text-xs font-semibold uppercase flex items-center gap-1">
+                <Layers className="w-3 h-3" /> 總任務數
+              </div>
+              <div className="text-2xl font-bold text-indigo-700">{globalStats.totalActive} <span className="text-sm text-slate-400 font-normal">active</span></div>
+            </Card>
+          </div>
+
+          {/* Level 2: Project Distribution */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card className="p-6">
+              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <Layers className="w-4 h-4 text-slate-500" /> 專案階段分佈 (Maturity Phase)
+              </h3>
+              <div className="space-y-3">
+                {Object.entries(globalStats.phaseStats).map(([key, count]) => (
+                  <div key={key} className="flex items-center text-sm">
+                    <div className="w-24 text-slate-500 text-xs font-medium">{key}</div>
+                    <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden mx-2">
+                      <div className="h-full bg-slate-600 rounded-full" style={{width: `${((count) / (globalStats.totalActive || 1)) * 100}%`}}></div>
+                    </div>
+                    <div className="w-8 text-right font-bold text-slate-700">{count}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <Flag className="w-4 h-4 text-slate-500" /> 風險優先級分佈 (Risk Priority)
+              </h3>
+              <div className="flex items-end justify-around h-32 pb-2">
+                 {/* Simple Bar Chart */}
+                 <div className="flex flex-col items-center gap-2 w-1/4">
+                    <div className="w-full bg-red-100 rounded-t-lg relative group h-full flex items-end justify-center">
+                       <div className="w-full bg-red-500 rounded-t-lg transition-all duration-500" style={{height: `${((globalStats.priorityStats.HIGH || 0) / (globalStats.totalActive || 1)) * 100}%`}}></div>
+                       <span className="absolute -top-6 font-bold text-red-600">{globalStats.priorityStats.HIGH}</span>
+                    </div>
+                    <span className="text-xs font-bold text-slate-600">High</span>
+                 </div>
+                 <div className="flex flex-col items-center gap-2 w-1/4">
+                    <div className="w-full bg-amber-100 rounded-t-lg relative group h-full flex items-end justify-center">
+                       <div className="w-full bg-amber-500 rounded-t-lg transition-all duration-500" style={{height: `${((globalStats.priorityStats.MEDIUM || 0) / (globalStats.totalActive || 1)) * 100}%`}}></div>
+                       <span className="absolute -top-6 font-bold text-amber-600">{globalStats.priorityStats.MEDIUM}</span>
+                    </div>
+                    <span className="text-xs font-bold text-slate-600">Medium</span>
+                 </div>
+                 <div className="flex flex-col items-center gap-2 w-1/4">
+                    <div className="w-full bg-slate-100 rounded-t-lg relative group h-full flex items-end justify-center">
+                       <div className="w-full bg-slate-400 rounded-t-lg transition-all duration-500" style={{height: `${((globalStats.priorityStats.LOW || 0) / (globalStats.totalActive || 1)) * 100}%`}}></div>
+                       <span className="absolute -top-6 font-bold text-slate-600">{globalStats.priorityStats.LOW}</span>
+                    </div>
+                    <span className="text-xs font-bold text-slate-600">Low</span>
+                 </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Level 3: Team Matrix */}
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+                <Users className="w-5 h-5 text-slate-500" /> 人員狀態矩陣
+              </h3>
+              <div className="flex bg-white border border-slate-200 rounded-lg p-1">
+                <button 
+                  onClick={() => setFilterType('ALL')}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${filterType === 'ALL' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  全部
+                </button>
+                <button 
+                  onClick={() => setFilterType('OVERLOADED')}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${filterType === 'OVERLOADED' ? 'bg-red-50 text-red-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  過載
+                </button>
+                <button 
+                  onClick={() => setFilterType('FREE')}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${filterType === 'FREE' ? 'bg-emerald-50 text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  空閒
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredStats.length === 0 && (
+                <div className="col-span-full py-10 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                  沒有符合條件的成員
+                </div>
+              )}
+              {filteredStats.map(({ user, activeTasks, totalEstimated, loadRate, isOverloaded }, index) => (
+                <Card 
+                  key={user.id} 
+                  className={`p-6 relative group animate-in fade-in slide-in-from-bottom-4 duration-500 ${isOverloaded ? 'border-red-200 bg-red-50/10' : ''}`} 
+                  style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${user.avatarColor} shadow-sm`}>
+                        {user.name.charAt(0)}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900">{user.name}</h3>
+                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                          <Badge className="w-3 h-3" />
+                          {user.employeeId}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 rounded-lg shadow-sm border border-slate-100 absolute top-4 right-4">
+                      <button
+                        onClick={() => setViewingUser(user)}
+                        className="text-slate-400 hover:text-blue-600 p-2 border-r border-slate-100"
+                        title="查看詳情 (日誌)"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleOpenEditUser(user)}
+                        className="text-slate-400 hover:text-blue-600 p-2 border-r border-slate-100"
+                        title="編輯成員"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => setUserToDelete(user.id)}
+                        className="text-slate-400 hover:text-red-500 p-2"
+                        title="移除成員"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 py-4 border-t border-b border-slate-100">
+                      <div className="text-center border-r border-slate-100">
+                        <div className="text-2xl font-bold text-slate-900">{activeTasks}</div>
+                        <div className="text-xs text-slate-500">進行中任務</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-slate-900">{totalEstimated}h</div>
+                        <div className="text-xs text-slate-500">總預估工時</div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="text-slate-600 font-medium flex items-center gap-2">
+                          <Activity className="w-4 h-4" /> 能量負載
+                        </span>
+                        <span className={`font-bold ${isOverloaded ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {Math.round(loadRate)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                        <div 
+                          className={`h-2.5 rounded-full transition-all duration-700 ease-out ${isOverloaded ? 'bg-red-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${loadRate}%` }}
+                        ></div>
+                      </div>
+                      {isOverloaded && (
+                        <p className="text-xs text-red-500 mt-1 flex items-center gap-1 font-medium">
+                          <Zap className="w-3 h-3" /> 工作量過載，建議調整
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          <UserDetailModal 
+            isOpen={!!viewingUser}
+            onClose={() => setViewingUser(null)}
+            user={viewingUser}
+            tasks={tasks}
+            onTransferTask={(task) => {
+              setViewingUser(null);
+              setTaskToTransfer(task);
+            }}
+            categories={categories}
+          />
+
+          {/* Admin Transfer Modal */}
+          {taskToTransfer && (
+            <TransferModal 
+              isOpen={!!taskToTransfer}
+              onClose={() => setTaskToTransfer(null)}
+              onConfirm={(newUserId) => onTransferTask(taskToTransfer.id, newUserId, currentAdmin.id)}
+              users={potentialTransferUsers}
+              taskTitle={taskToTransfer.title}
+            />
+          )}
+
+          {/* Admin Assign/Create Task Modal */}
+          <TaskModal 
+            isOpen={isTaskModalOpen}
+            onClose={() => setIsTaskModalOpen(false)}
+            onSubmit={onAddTask}
+            categories={categories}
+            users={engineersOnly} // Pass engineers to allow assignment
+          />
+
+          <UserModal 
+            isOpen={isUserModalOpen} 
+            onClose={() => { setIsUserModalOpen(false); setEditingUser(null); }} 
+            onSubmit={(data) => {
+              if (editingUser) {
+                onUpdateUser(editingUser.id, data);
+              } else {
+                onAddUser(data);
+              }
+            }} 
+            editingUser={editingUser}
+          />
+
+          <CategoryModal
+            isOpen={isCategoryModalOpen}
+            onClose={() => setIsCategoryModalOpen(false)}
+            categories={categories}
+            onAddCategory={onAddCategory}
+            onDeleteCategory={onDeleteCategory}
+          />
+
+          <ConfirmModal 
+            isOpen={!!userToDelete}
+            onClose={() => setUserToDelete(null)}
+            onConfirm={() => {
+              if (userToDelete) onRemoveUser(userToDelete);
+            }}
+            title="移除成員確認"
+            message="確定要移除這位成員嗎？這將會導致該成員無法登入，且此操作無法復原。"
+            confirmText="確認移除"
+            isDanger={true}
+          />
+        </div>
+      );
+    };
+
+    // --- components/EngineerDashboard.tsx ---
+    interface EngineerDashboardProps {
+      user: User;
+      tasks: Task[];
+      users: User[];
+      categories: Category[];
+      onAddTask: (task: any) => void;
+      onUpdateTask: (taskId: string, updates: Partial<Task>) => void;
+      onAddLog: (taskId: string, log: any) => void;
+      onDeleteTask: (taskId: string) => void;
+      onTransferTask: (taskId: string, newUserId: string, fromUserId: string) => void;
+      onDismissAlert: (taskId: string) => void;
+    }
+
+    const EngineerDashboard: React.FC<EngineerDashboardProps> = ({ 
+      user, 
+      tasks, 
+      users, 
+      categories,
+      onAddTask, 
+      onUpdateTask, 
+      onAddLog,
+      onDeleteTask,
+      onTransferTask,
+      onDismissAlert
+    }) => {
+      const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+      const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+      const [activeTab, setActiveTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
+      const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+      
+      // Confirmation states
+      const [taskToComplete, setTaskToComplete] = useState<string | null>(null);
+      const [taskToRestore, setTaskToRestore] = useState<string | null>(null);
+      const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
+      const [taskToTransfer, setTaskToTransfer] = useState<Task | null>(null);
+
+      const myTasks = tasks.filter(t => t.userId === user.id);
+      const activeTasks = myTasks.filter(t => t.status !== 'DONE');
+      const historyTasks = myTasks.filter(t => t.status === 'DONE');
+
+      // Filter for transfer: Must be ENGINEER and not self
+      const otherEngineers = useMemo(() => users.filter(u => u.id !== user.id && u.role === 'ENGINEER'), [users, user.id]);
+
+      const handleOpenLog = (task: Task) => {
+        setSelectedTask(task);
+        setIsLogModalOpen(true);
+      };
+
+      const handleCompleteTask = (taskId: string) => {
+        onUpdateTask(taskId, { 
+          status: 'DONE', 
+          completedDate: new Date().toISOString().split('T')[0] 
+        });
+      };
+
+      const handleStartTask = (task: Task) => {
+        const updates: Partial<Task> = {
+          status: 'IN_PROGRESS'
+        };
+        if (!task.startDate) {
+          updates.startDate = new Date().toISOString().split('T')[0];
+        }
+        onUpdateTask(task.id, updates);
+      };
+
+      const handlePauseTask = (taskId: string) => {
+        onUpdateTask(taskId, {
+          status: 'PAUSED'
+        });
+      };
+
+      const handleRestoreTask = (taskId: string) => {
+        onUpdateTask(taskId, {
+          status: 'IN_PROGRESS',
+          completedDate: undefined
+        });
+      };
+
+      return (
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">早安, {user.name}</h1>
+              <p className="text-slate-500">這是您今日的工作概覽</p>
+            </div>
+            <div className="flex gap-3 items-center">
+              <NotificationBell 
+                 tasks={tasks} 
+                 currentUser={user} 
+                 allUsers={users}
+                 onDismissAlert={onDismissAlert}
+               />
+              <div className="w-px h-6 bg-slate-200 mx-1"></div>
+              <div className="flex bg-slate-100 p-1 rounded-lg">
+                <button 
+                  onClick={() => setActiveTab('ACTIVE')}
+                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'ACTIVE' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  進行中
+                </button>
+                <button 
+                  onClick={() => setActiveTab('HISTORY')}
+                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'HISTORY' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  歷史紀錄
+                </button>
+              </div>
+              {activeTab === 'ACTIVE' && (
+                <Button onClick={() => { setSelectedTask(null); setIsTaskModalOpen(true); }}>
+                  <Plus className="w-4 h-4" /> 建立任務
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-4">
+            {(activeTab === 'ACTIVE' ? activeTasks : historyTasks).length === 0 && (
+              <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-300">
+                <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Briefcase className="w-8 h-8 text-slate-400" />
+                </div>
+                <h3 className="text-lg font-medium text-slate-900">目前沒有任務</h3>
+                <p className="text-slate-500">點擊右上方按鈕開始建立您的第一個任務</p>
+              </div>
+            )}
+
+            {(activeTab === 'ACTIVE' ? activeTasks : historyTasks).map((task, index) => (
+              <Card 
+                key={task.id} 
+                className="p-5 flex flex-col md:flex-row gap-6 hover:border-blue-200 transition-colors relative group animate-in fade-in slide-in-from-bottom-4 duration-500" 
+                style={{ animationDelay: `${index * 75}ms`, animationFillMode: 'both' }}
+              >
+                {/* Category Badge */}
+                <div className="absolute top-0 right-0 p-2">
+                  <div className="bg-slate-50 p-1.5 rounded-bl-xl rounded-tr-xl border-l border-b border-slate-100 text-xs font-semibold text-slate-500">
+                    {categories.find(c => c.id === task.categoryId)?.name || '未分類'}
+                  </div>
+                </div>
+
+                <div className="flex-1 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                        <StatusBadge status={task.status} />
+                        {/* VDA: Priority Badge */}
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${getPriorityColor(task.priority)} font-medium flex items-center gap-1`}>
+                          <Flag className="w-3 h-3" />
+                          {task.priority === 'HIGH' ? 'High' : task.priority === 'MEDIUM' ? 'Medium' : 'Low'}
+                        </span>
+                        <h3 className="font-bold text-lg text-slate-900 mr-20">{task.title}</h3>
+                      </div>
+                      <p className="text-slate-600 text-sm leading-relaxed">{task.description}</p>
+                    </div>
+                    {activeTab === 'ACTIVE' && (
+                       <div className="md:absolute md:top-5 md:right-5 flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                         <button
+                            onClick={() => setTaskToTransfer(task)}
+                            className="text-slate-300 hover:text-blue-500 p-1"
+                            title="轉派任務"
+                         >
+                            <ArrowRightLeft className="w-4 h-4" />
+                         </button>
+                         <button 
+                          onClick={() => setTaskToDelete(task.id)}
+                          className="text-slate-300 hover:text-red-500 p-1"
+                          title="刪除任務"
+                         >
+                           <Trash2 className="w-4 h-4" />
+                         </button>
+                       </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-4 text-sm text-slate-500">
+                    {/* VDA: Project Phase */}
+                    <div className="flex items-center gap-1.5 min-w-[140px]">
+                      <Layers className="w-4 h-4 text-slate-400" />
+                      <span className="font-medium text-slate-700">{getPhaseLabel(task.phase)}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-[140px]">
+                      <Calendar className="w-4 h-4 text-slate-400" />
+                      <span>接收: {task.receiveDate}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-[140px]">
+                      <Clock className="w-4 h-4 text-slate-400" />
+                      <span>預計: <span className={new Date(task.deadline) < new Date() && task.status !== 'DONE' ? 'text-red-500 font-bold' : ''}>{task.deadline}</span></span>
+                    </div>
+                    {(task.startDate || task.status === 'IN_PROGRESS' || task.status === 'DONE') && (
+                      <div className="flex items-center gap-1.5 min-w-[140px]">
+                        <Play className="w-4 h-4 text-slate-400" />
+                        <span>開始: {task.startDate || '--'}</span>
+                      </div>
+                    )}
+                     {task.status === 'DONE' && (
+                      <div className="flex items-center gap-1.5 min-w-[140px]">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        <span className="text-emerald-700 font-medium">完成: {task.completedDate}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Log Preview - Highlighted */}
+                  {task.logs.length > 0 && (
+                    <div className="mt-3 bg-blue-50 p-3 rounded-lg text-sm border border-blue-100">
+                      <div className="flex justify-between items-center mb-1">
+                         <div className="text-xs text-blue-600 font-bold flex items-center gap-1">
+                           <ScrollText className="w-3 h-3" /> 最新進度 ({task.logs[0].date})
+                         </div>
+                         <div className="text-xs text-blue-400">+{task.logs[0].hoursSpent}h</div>
+                      </div>
+                      <div className="text-slate-700 font-medium line-clamp-2">{task.logs[0].content}</div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex md:flex-col justify-end gap-2 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6 min-w-[140px]">
+                  {activeTab === 'ACTIVE' ? (
+                    <>
+                      {(task.status === 'TODO' || task.status === 'PAUSED') ? (
+                        <Button 
+                          className="w-full justify-start" 
+                          onClick={() => handleStartTask(task)}
+                          variant={task.status === 'PAUSED' ? "primary" : "primary"}
+                        >
+                          <Play className="w-4 h-4" /> 
+                          {task.status === 'PAUSED' ? "恢復執行" : "開始執行"}
+                        </Button>
+                      ) : (
+                        <>
+                          <Button variant="secondary" className="w-full justify-start" onClick={() => handlePauseTask(task.id)}>
+                            <Pause className="w-4 h-4" /> 暫停任務
+                          </Button>
+                          <Button variant="secondary" className="w-full justify-start" onClick={() => handleOpenLog(task)}>
+                            <FileText className="w-4 h-4" /> 填寫日誌
+                          </Button>
+                          <Button className="w-full justify-start" onClick={() => setTaskToComplete(task.id)}>
+                            <CheckCircle2 className="w-4 h-4" /> 標記完成
+                          </Button>
+                        </>
+                      )}
+                      {/* Mobile Transfer & Delete */}
+                      <div className="md:hidden mt-2 border-t border-slate-100 pt-2 flex gap-2">
+                         <Button variant="ghost" className="w-full justify-start text-slate-500 hover:bg-slate-50" onClick={() => setTaskToTransfer(task)}>
+                            <ArrowRightLeft className="w-4 h-4" /> 轉派
+                          </Button>
+                         <Button variant="ghost" className="w-full justify-start text-red-500 hover:bg-red-50 hover:text-red-600" onClick={() => setTaskToDelete(task.id)}>
+                            <Trash2 className="w-4 h-4" /> 刪除
+                          </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-center py-2">
+                        <div className="text-xs text-slate-500">工時統計</div>
+                        <div className="font-medium text-slate-900">預計: {task.estimatedHours}h</div>
+                        <div className="font-medium text-slate-700">實際: {task.actualHours}h</div>
+                      </div>
+                      <Button variant="secondary" className="w-full mt-auto" onClick={() => setTaskToRestore(task.id)}>
+                        <Undo2 className="w-4 h-4" /> 復原任務
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <TaskModal 
+            isOpen={isTaskModalOpen} 
+            onClose={() => { setIsTaskModalOpen(false); setSelectedTask(null); }} 
+            onSubmit={(data) => {
+              if (selectedTask) {
+                onUpdateTask(selectedTask.id, data);
+              } else {
+                onAddTask(data);
+              }
+            }}
+            editingTask={selectedTask}
+            categories={categories}
+          />
+
+          {selectedTask && (
+            <LogModal 
+              isOpen={isLogModalOpen}
+              onClose={() => { setIsLogModalOpen(false); setSelectedTask(null); }}
+              onSubmit={(logData) => onAddLog(selectedTask.id, logData)}
+              taskTitle={selectedTask.title}
+            />
+          )}
+
+          {/* Transfer Modal */}
+          {taskToTransfer && (
+            <TransferModal 
+              isOpen={!!taskToTransfer}
+              onClose={() => setTaskToTransfer(null)}
+              onConfirm={(newUserId) => onTransferTask(taskToTransfer.id, newUserId, user.id)}
+              users={otherEngineers} 
+              taskTitle={taskToTransfer.title}
+            />
+          )}
+
+          {/* Confirmation Modals */}
+          <ConfirmModal 
+            isOpen={!!taskToComplete}
+            onClose={() => setTaskToComplete(null)}
+            onConfirm={() => {
+              if (taskToComplete) handleCompleteTask(taskToComplete);
+            }}
+            title="完成任務確認"
+            message="您確定要將此任務標記為完成嗎？這將會把它移至歷史紀錄中。"
+            confirmText="標記完成"
+          />
+
+          <ConfirmModal 
+            isOpen={!!taskToRestore}
+            onClose={() => setTaskToRestore(null)}
+            onConfirm={() => {
+              if (taskToRestore) handleRestoreTask(taskToRestore);
+            }}
+            title="復原任務確認"
+            message="您確定要將此任務退回進行中狀態嗎？"
+            confirmText="復原任務"
+          />
+
+          <ConfirmModal 
+            isOpen={!!taskToDelete}
+            onClose={() => setTaskToDelete(null)}
+            onConfirm={() => {
+              if (taskToDelete) onDeleteTask(taskToDelete);
+            }}
+            title="刪除任務確認"
+            message="您確定要永久刪除此任務嗎？此操作無法復原。"
+            confirmText="確認刪除"
+            isDanger={true}
+          />
+        </div>
+      );
+    };
+
+    // --- App.tsx ---
+    const App = () => {
+      const [users, setUsers] = useState<User[]>(() => {
+        const saved = localStorage.getItem('connector_users');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          // Basic migration check (if old data structure)
+          if (parsed.length > 0 && parsed[0].email) {
+            return parsed.map((u: any) => ({
+              ...u,
+              employeeId: u.email.split('@')[0],
+              email: undefined 
+            }));
+          }
+          return parsed;
+        }
+        return INITIAL_USERS;
+      });
+
+      const [categories, setCategories] = useState<Category[]>(() => {
+        const saved = localStorage.getItem('connector_categories');
+        return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
+      });
+
+      const [tasks, setTasks] = useState<Task[]>(() => {
+        const saved = localStorage.getItem('connector_tasks');
+        let parsedTasks: Task[] = saved ? JSON.parse(saved) : INITIAL_TASKS;
+        
+        // Migration: If task has no categoryId, assign the first available category
+        const defaultCatId = INITIAL_CATEGORIES[0].id;
+        parsedTasks = parsedTasks.map(t => {
+           if (!t.categoryId) {
+             return { ...t, categoryId: defaultCatId };
+           }
+           return t;
+        });
+        
+        return parsedTasks;
+      });
+
+      const [currentUser, setCurrentUser] = useState<User | null>(null);
+      const [pendingImportData, setPendingImportData] = useState<{users: User[], tasks: Task[]} | null>(null);
+
+      // Persistence
+      useEffect(() => {
+        localStorage.setItem('connector_users', JSON.stringify(users));
+      }, [users]);
+
+      useEffect(() => {
+        localStorage.setItem('connector_tasks', JSON.stringify(tasks));
+      }, [tasks]);
+
+      useEffect(() => {
+        localStorage.setItem('connector_categories', JSON.stringify(categories));
+      }, [categories]);
+
+      // --- Actions ---
+
+      const handleAddUser = (userData: Omit<User, 'id' | 'avatarColor'>) => {
+        const newUser: User = {
+          ...userData,
+          id: generateId(),
+          avatarColor: getRandomColor()
+        };
+        setUsers([...users, newUser]);
+      };
+
+      const handleUpdateUser = (id: string, userData: Partial<User>) => {
+        setUsers(users.map(u => u.id === id ? { ...u, ...userData } : u));
+      };
+
+      const handleRemoveUser = (userId: string) => {
+        setUsers(users.filter(u => u.id !== userId));
+      };
+
+      const handleAddCategory = (name: string) => {
+        const newCat: Category = {
+          id: generateId(),
+          name
+        };
+        setCategories([...categories, newCat]);
+      };
+
+      const handleDeleteCategory = (id: string) => {
+        setCategories(categories.filter(c => c.id !== id));
+      };
+
+      const handleAddTask = (taskData: any) => {
+        if (!currentUser) return;
+        const newTask: Task = {
+          ...taskData,
+          id: generateId(),
+          userId: taskData.userId || currentUser.id, // Use provided userId (Admin assignment) or current user
+          status: 'TODO',
+          logs: [],
+          actualHours: 0
+        };
+        setTasks([newTask, ...tasks]);
+      };
+
+      const handleUpdateTask = (taskId: string, updates: Partial<Task>) => {
+        setTasks(tasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
+      };
+
+      const handleDeleteTask = (taskId: string) => {
+        setTasks(tasks.filter(t => t.id !== taskId));
+      }
+
+      const handleTransferTask = (taskId: string, newUserId: string, fromUserId: string) => {
+        setTasks(tasks.map(t => t.id === taskId ? { 
+          ...t, 
+          userId: newUserId,
+          transferredFrom: fromUserId 
+        } : t));
+      };
+
+      const handleDismissAlert = (taskId: string) => {
+        setTasks(tasks.map(t => t.id === taskId ? { ...t, transferredFrom: undefined } : t));
+      };
+
+      const handleAddLog = (taskId: string, logData: { content: string, hoursSpent: number }) => {
+        const newLog: TaskLog = {
+          id: generateId(),
+          date: new Date().toISOString().split('T')[0],
+          ...logData
+        };
+        
+        setTasks(tasks.map(t => {
+          if (t.id === taskId) {
+            // If adding log and task is not started/in_progress, start it and set startDate
+            const updates: Partial<Task> = {
+              actualHours: t.actualHours + logData.hoursSpent,
+              logs: [newLog, ...t.logs],
+              status: 'IN_PROGRESS' 
+            };
+            
+            if (!t.startDate) {
+                updates.startDate = new Date().toISOString().split('T')[0];
+            }
+            
+            return {
+              ...t,
+              ...updates
+            };
+          }
+          return t;
+        }));
+      };
+
+      // --- Export / Import Logic ---
+      
+      const handleExportData = () => {
+        const data = {
+          version: '1.0',
+          timestamp: new Date().toISOString(),
+          users,
+          tasks
+        };
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `connector_sync_data_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      };
+
+      const handleImportData = (file: File) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const content = e.target?.result as string;
+            const parsed = JSON.parse(content);
+            
+            if (!parsed.users || !parsed.tasks) {
+              alert("錯誤：檔案格式不正確");
+              return;
+            }
+            
+            setPendingImportData({ users: parsed.users, tasks: parsed.tasks });
+          } catch (err) {
+            alert("錯誤：無法解析檔案");
+          }
+        };
+        reader.readAsText(file);
+      };
+
+      const confirmImport = () => {
+        if (pendingImportData) {
+          setUsers(pendingImportData.users);
+          setTasks(pendingImportData.tasks);
+          setPendingImportData(null);
+          alert("資料匯入成功！");
+        }
+      };
+
+      // --- View: Login Screen ---
+      if (!currentUser) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+            <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
+              <div className="bg-blue-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-600">
+                <Briefcase className="w-10 h-10" />
+              </div>
+              <h1 className="text-3xl font-bold text-slate-900 mb-2">Connector Sync</h1>
+              <p className="text-slate-500 mb-8">請選擇您的身份登入系統</p>
+              
+              <div className="space-y-3">
+                {users.map(user => (
+                  <button
+                    key={user.id}
+                    onClick={() => setCurrentUser(user)}
+                    className="w-full flex items-center p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50 transition-all group"
+                  >
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${user.avatarColor} mr-4`}>
+                      {user.name.charAt(0)}
+                    </div>
+                    <div className="text-left flex-1">
+                      <div className="font-bold text-slate-900 group-hover:text-blue-700">{user.name}</div>
+                      <div className="text-xs text-slate-500 flex items-center gap-1">
+                        <Badge className="w-3 h-3" /> {user.employeeId} • {user.role === 'ADMIN' ? '管理員' : '工程師'}
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // --- View: Main Application ---
+      return (
+        <div className="min-h-screen flex flex-col md:flex-row bg-slate-50">
+          {/* Sidebar */}
+          <aside className="bg-white w-full md:w-64 border-b md:border-r border-slate-200 flex-shrink-0">
+            <div className="p-6 border-b border-slate-100 flex items-center gap-3">
+              <div className="bg-blue-600 p-2 rounded-lg text-white">
+                <Briefcase className="w-5 h-5" />
+              </div>
+              <span className="font-bold text-lg text-slate-900">Sync</span>
+            </div>
+            
+            <div className="p-4 space-y-2">
+              <div className="px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Menu</div>
+              <button 
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${currentUser.role === 'ADMIN' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                disabled={currentUser.role !== 'ADMIN'}
+                onClick={() => {/* Navigation placeholder */}}
+              >
+                <LayoutDashboard className="w-4 h-4" /> 總覽儀表板
+              </button>
+              <button 
+                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${currentUser.role === 'ENGINEER' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                 disabled={currentUser.role !== 'ENGINEER'}
+                 onClick={() => {/* Navigation placeholder */}}
+              >
+                <CheckCircle2 className="w-4 h-4" /> 我的任務
+              </button>
+            </div>
+
+            <div className="p-4 mt-auto border-t border-slate-100">
+              <div className="flex items-center gap-3 px-4 py-3 mb-2">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${currentUser.avatarColor}`}>
+                  {currentUser.name.charAt(0)}
+                </div>
+                <div className="overflow-hidden">
+                  <div className="font-bold text-sm text-slate-900 truncate">{currentUser.name}</div>
+                  <div className="text-xs text-slate-500 truncate">{currentUser.employeeId}</div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setCurrentUser(null)}
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              >
+                <LogOut className="w-4 h-4" /> 登出系統
+              </button>
+            </div>
+          </aside>
+
+          {/* Main Content */}
+          <main className="flex-1 p-6 md:p-8 overflow-y-auto">
+            <div className="max-w-6xl mx-auto">
+              {currentUser.role === 'ADMIN' ? (
+                <AdminDashboard 
+                  users={users} 
+                  tasks={tasks}
+                  categories={categories}
+                  onAddUser={handleAddUser}
+                  onUpdateUser={handleUpdateUser}
+                  onRemoveUser={handleRemoveUser}
+                  onImportData={handleImportData}
+                  onExportData={handleExportData}
+                  onTransferTask={handleTransferTask}
+                  onDismissAlert={handleDismissAlert}
+                  onAddTask={handleAddTask}
+                  onAddCategory={handleAddCategory}
+                  onDeleteCategory={handleDeleteCategory}
+                />
+              ) : (
+                <EngineerDashboard 
+                  user={currentUser} 
+                  tasks={tasks} 
+                  users={users}
+                  categories={categories}
+                  onAddTask={handleAddTask}
+                  onUpdateTask={handleUpdateTask}
+                  onAddLog={handleAddLog}
+                  onDeleteTask={handleDeleteTask}
+                  onTransferTask={handleTransferTask}
+                  onDismissAlert={handleDismissAlert}
+                />
+              )}
+            </div>
+          </main>
+
+           <ConfirmModal 
+            isOpen={!!pendingImportData}
+            onClose={() => setPendingImportData(null)}
+            onConfirm={confirmImport}
+            title="確認匯入資料"
+            message={
+              <div className="space-y-2">
+                <p>您即將匯入新的資料檔案。這將會：</p>
+                <ul className="list-disc pl-5 text-sm text-slate-600 space-y-1">
+                  <li><strong>覆蓋</strong> 目前系統中所有的成員與任務資料。</li>
+                  <li>若是從雲端硬碟讀取，這將同步成最新的版本。</li>
+                </ul>
+                <p className="font-bold text-slate-800 mt-2">請確認您已備份目前的資料，或確定要執行此操作？</p>
+              </div>
+            }
+            confirmText="確認覆蓋匯入"
+            isDanger={true}
+          />
+        </div>
+      );
+    };
+
+    const rootElement = document.getElementById('root');
+    if (rootElement) {
+      const root = createRoot(rootElement);
+      root.render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>
+      );
+    }
+  </script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
