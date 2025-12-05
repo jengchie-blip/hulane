@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Connector Sync - 工程管理系統</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- React & ReactDOM (UMD for browser) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel Standalone (Compiles JSX in browser) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Lucide React Icons (UMD) -->
+    <script src="https://unpkg.com/lucide-react@0.344.0/dist/umd/lucide-react.min.js"></script>
+
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            colors: {
+              primary: {
+                50: '#f0f9ff',
+                100: '#e0f2fe',
+                500: '#0ea5e9',
+                600: '#0284c7',
+                700: '#0369a1',
+                900: '#0c4a6e',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: #f8fafc;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect, useMemo, useRef } = React;
+      const { createRoot } = ReactDOM;
+      const { 
+        Users, 
+        LayoutDashboard, 
+        Plus, 
+        Clock, 
+        Calendar, 
+        CheckCircle2, 
+        AlertCircle,
+        LogOut,
+        ChevronRight,
+        Activity,
+        Briefcase,
+        User: UserIcon, // Alias User to UserIcon
+        BarChart3,
+        FileText,
+        X,
+        Trash2,
+        Undo2,
+        AlertTriangle,
+        Pencil,
+        Badge,
+        Play,
+        Pause,
+        Download,
+        Upload
+      } = lucideReact;
+
+      // --- Types (Simulated in JS) ---
+      // TaskStatus: 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE'
+
+      // --- Mock Data / Initial State ---
+
+      const INITIAL_USERS = [
+        { id: 'u1', name: 'Manager (Admin)', employeeId: 'ADMIN-001', role: 'ADMIN', avatarColor: 'bg-blue-500' },
+        { id: 'u2', name: 'Alex Chen', employeeId: 'ENG-001', role: 'ENGINEER', avatarColor: 'bg-emerald-500' },
+        { id: 'u3', name: 'Sarah Lin', employeeId: 'ENG-002', role: 'ENGINEER', avatarColor: 'bg-purple-500' },
+        { id: 'u4', name: 'Mike Wang', employeeId: 'ENG-003', role: 'ENGINEER', avatarColor: 'bg-orange-500' },
+      ];
+
+      const INITIAL_TASKS = [
+        {
+          id: 't1',
+          userId: 'u2',
+          title: 'Type-C Gen3 設計初稿',
+          description: '完成 Pin 腳定義與初步 3D 堆疊',
+          receiveDate: new Date().toISOString().split('T')[0],
+          deadline: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
+          startDate: new Date().toISOString().split('T')[0],
+          estimatedHours: 16,
+          actualHours: 4,
+          status: 'IN_PROGRESS',
+          logs: [
+            { id: 'l1', date: new Date().toISOString().split('T')[0], content: '完成 Pin 定義', hoursSpent: 4 }
+          ]
+        },
+        {
+          id: 't2',
+          userId: 'u3',
+          title: '模具公差分析報告',
+          description: '針對上週試模結果進行公差檢討',
+          receiveDate: new Date().toISOString().split('T')[0],
+          deadline: new Date().toISOString().split('T')[0],
+          estimatedHours: 4,
+          actualHours: 0,
+          status: 'TODO',
+          logs: []
+        }
+      ];
+
+      const AVATAR_COLORS = [
+        'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-orange-500', 
+        'bg-indigo-500', 'bg-pink-500', 'bg-teal-500', 'bg-cyan-500'
+      ];
+
+      // --- Utilities ---
+
+      const generateId = () => Math.random().toString(36).substr(2, 9);
+
+      const getRandomColor = () => AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+
+      const getStatusColor = (status) => {
+        switch (status) {
+          case 'TODO': return 'bg-slate-100 text-slate-700 border-slate-200';
+          case 'IN_PROGRESS': return 'bg-blue-50 text-blue-700 border-blue-200';
+          case 'REVIEW': return 'bg-amber-50 text-amber-700 border-amber-200';
+          case 'DONE': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+          default: return 'bg-gray-100';
+        }
+      };
+
+      const getStatusLabel = (status) => {
+        switch (status) {
+          case 'TODO': return '待處理';
+          case 'IN_PROGRESS': return '進行中';
+          case 'REVIEW': return '審核中';
+          case 'DONE': return '已完成';
+          default: return status;
+        }
+      };
+
+      // --- Components ---
+
+      const Card = ({ children, className = '' }) => (
+        <div className={`bg-white rounded-xl border border-slate-200 shadow-sm ${className}`}>
+          {children}
+        </div>
+      );
+
+      const Button = ({ onClick, children, variant = 'primary', className = '', type = 'button', disabled = false }) => {
+        const base = "px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed";
+        const variants = {
+          primary: "bg-primary-600 text-white hover:bg-primary-700 shadow-sm shadow-primary-600/20",
+          secondary: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+          ghost: "text-slate-600 hover:bg-slate-100",
+          danger: "bg-red-50 text-red-600 hover:bg-red-100"
+        };
+        return (
+          <button onClick={onClick} type={type} disabled={disabled} className={`${base} ${variants[variant] || variants.primary} ${className}`}>
+            {children}
+          </button>
+        );
+      };
+
+      const StatusBadge = ({ status }) => (
+        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(status)}`}>
+          {getStatusLabel(status)}
+        </span>
+      );
+
+      const Modal = ({ isOpen, onClose, title, children }) => {
+        if (!isOpen) return null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                <h3 className="font-bold text-lg text-slate-900">{title}</h3>
+                <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 max-h-[80vh] overflow-y-auto">
+                {children}
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const ConfirmModal = ({ 
+        isOpen, 
+        onClose, 
+        onConfirm, 
+        title, 
+        message, 
+        confirmText = '確認', 
+        cancelText = '取消', 
+        isDanger = false 
+      }) => {
+        if (!isOpen) return null;
+        return (
+          <Modal isOpen={isOpen} onClose={onClose} title={title}>
+            <div className="space-y-6">
+              <div className="flex items-start gap-4">
+                <div className={`p-3 rounded-full shrink-0 ${isDanger ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-slate-600 text-sm leading-relaxed">{message}</div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="secondary" onClick={onClose}>{cancelText}</Button>
+                <Button 
+                  variant={isDanger ? 'danger' : 'primary'} 
+                  onClick={() => { onConfirm(); onClose(); }}
+                >
+                  {confirmText}
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        );
+      };
+
+      // --- Functional Modals ---
+
+      const UserModal = ({ isOpen, onClose, onSubmit, editingUser }) => {
+        const [formData, setFormData] = useState({
+          name: '',
+          employeeId: '',
+          role: 'ENGINEER'
+        });
+
+        useEffect(() => {
+          if (editingUser) {
+            setFormData({
+              name: editingUser.name,
+              employeeId: editingUser.employeeId,
+              role: editingUser.role
+            });
+          } else {
+            setFormData({
+              name: '',
+              employeeId: '',
+              role: 'ENGINEER'
+            });
+          }
+        }, [editingUser, isOpen]);
+
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          onSubmit(formData);
+          onClose();
+        };
+
+        if (!isOpen) return null;
+
+        return (
+          <Modal isOpen={isOpen} onClose={onClose} title={editingUser ? "編輯成員資料" : "新增團隊成員"}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">姓名</label>
+                <input 
+                  required
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  value={formData.name}
+                  onChange={e => setFormData({...formData, name: e.target.value})}
+                  placeholder="例如: 王小明"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">工號 (Employee ID)</label>
+                <input 
+                  required
+                  type="text"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  value={formData.employeeId}
+                  onChange={e => setFormData({...formData, employeeId: e.target.value})}
+                  placeholder="例如: ENG-001"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">角色權限</label>
+                <select 
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  value={formData.role}
+                  onChange={e => setFormData({...formData, role: e.target.value})}
+                >
+                  <option value="ENGINEER">Engineer (工程師)</option>
+                  <option value="ADMIN">Admin (管理者)</option>
+                </select>
+              </div>
+              <div className="pt-2 flex justify-end gap-3">
+                <Button variant="secondary" onClick={onClose}>取消</Button>
+                <Button type="submit">{editingUser ? "儲存變更" : "建立成員"}</Button>
+              </div>
+            </form>
+          </Modal>
+        );
+      };
+
+      const TaskModal = ({ isOpen, onClose, onSubmit, editingTask }) => {
+        const [formData, setFormData] = useState({
+          title: '',
+          description: '',
+          receiveDate: new Date().toISOString().split('T')[0],
+          deadline: '',
+          estimatedHours: 0
+        });
+        const [showConfirm, setShowConfirm] = useState(false);
+
+        useEffect(() => {
+          if (editingTask) {
+            setFormData({
+              title: editingTask.title,
+              description: editingTask.description,
+              receiveDate: editingTask.receiveDate,
+              deadline: editingTask.deadline,
+              estimatedHours: editingTask.estimatedHours
+            });
+          } else {
+            setFormData({
+              title: '',
+              description: '',
+              receiveDate: new Date().toISOString().split('T')[0],
+              deadline: '',
+              estimatedHours: 0
+            });
+          }
+        }, [editingTask, isOpen]);
+
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          if (editingTask) {
+            setShowConfirm(true);
+          } else {
+            onSubmit(formData);
+            onClose();
+          }
+        };
+
+        const handleConfirmEdit = () => {
+          onSubmit(formData);
+          setShowConfirm(false);
+          onClose();
+        };
+
+        if (!isOpen) return null;
+
+        return (
+          <>
+            <Modal isOpen={isOpen} onClose={onClose} title={editingTask ? "編輯任務" : "建立新任務"}>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">任務名稱</label>
+                  <input 
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    value={formData.title}
+                    onChange={e => setFormData({...formData, title: e.target.value})}
+                    placeholder="例如: Type-C 結構設計"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">任務接收日期</label>
+                    <input 
+                      required
+                      type="date"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                      value={formData.receiveDate}
+                      onChange={e => setFormData({...formData, receiveDate: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">預計完成日期</label>
+                    <input 
+                      required
+                      type="date"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                      value={formData.deadline}
+                      onChange={e => setFormData({...formData, deadline: e.target.value})}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">預計工時 (小時)</label>
+                  <input 
+                    required
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                    value={formData.estimatedHours}
+                    onChange={e => setFormData({...formData, estimatedHours: parseFloat(e.target.value)})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">任務描述 / 備註</label>
+                  <textarea 
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg h-24"
+                    value={formData.description}
+                    onChange={e => setFormData({...formData, description: e.target.value})}
+                    placeholder="請輸入詳細的工作內容..."
+                  />
+                </div>
+                <div className="pt-2 flex justify-end gap-3">
+                  <Button variant="secondary" onClick={onClose}>取消</Button>
+                  <Button type="submit">{editingTask ? "更新任務" : "建立任務"}</Button>
+                </div>
+              </form>
+            </Modal>
+
+            <ConfirmModal 
+              isOpen={showConfirm}
+              onClose={() => setShowConfirm(false)}
+              onConfirm={handleConfirmEdit}
+              title="確認修改"
+              message="您確定要儲存對此任務的變更嗎？"
+              confirmText="儲存變更"
+            />
+          </>
+        );
+      };
+
+      const LogModal = ({ isOpen, onClose, onSubmit, taskTitle }) => {
+        const [content, setContent] = useState('');
+        const [hoursSpent, setHoursSpent] = useState(0);
+
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          onSubmit({ content, hoursSpent });
+          onClose();
+          setContent('');
+          setHoursSpent(0);
+        };
+
+        if (!isOpen) return null;
+
+        return (
+          <Modal isOpen={isOpen} onClose={onClose} title={`填寫日誌: ${taskTitle}`}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">今日進度說明</label>
+                <textarea 
+                  required
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg h-32"
+                  value={content}
+                  onChange={e => setContent(e.target.value)}
+                  placeholder="今天完成了什麼部分..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">投入時數 (小時)</label>
+                <input 
+                  required
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  value={hoursSpent}
+                  onChange={e => setHoursSpent(parseFloat(e.target.value))}
+                />
+              </div>
+              <div className="pt-2 flex justify-end gap-3">
+                <Button variant="secondary" onClick={onClose}>取消</Button>
+                <Button type="submit">提交日誌</Button>
+              </div>
+            </form>
+          </Modal>
+        );
+      };
+
+      // --- Main Views ---
+
+      const AdminDashboard = ({ 
+        users, 
+        tasks, 
+        onAddUser,
+        onUpdateUser,
+        onRemoveUser,
+        onImportData,
+        onExportData
+      }) => {
+        const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+        const [editingUser, setEditingUser] = useState(null);
+        const [userToDelete, setUserToDelete] = useState(null);
+        const fileInputRef = useRef(null);
+
+        const stats = useMemo(() => {
+          return users.filter(u => u.role === 'ENGINEER').map(user => {
+            const userTasks = tasks.filter(t => t.userId === user.id && t.status !== 'DONE');
+            const totalEstimated = userTasks.reduce((acc, t) => acc + t.estimatedHours, 0);
+            
+            // Calculate Load
+            let maxDays = 1;
+            if (userTasks.length > 0) {
+              const today = new Date();
+              const dates = userTasks.map(t => new Date(t.deadline).getTime());
+              const maxDate = Math.max(...dates);
+              const diffTime = Math.abs(maxDate - today.getTime());
+              maxDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+            }
+            
+            const dailyLoad = totalEstimated / maxDays;
+            const loadRate = (dailyLoad / 8) * 100; // Assuming 8h workday
+
+            return {
+              user,
+              activeTasks: userTasks.length,
+              totalEstimated,
+              loadRate: Math.min(loadRate, 100),
+              isOverloaded: dailyLoad > 8
+            };
+          });
+        }, [users, tasks]);
+
+        const handleOpenEditUser = (user) => {
+          setEditingUser(user);
+          setIsUserModalOpen(true);
+        };
+
+        const handleFileChange = (e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            onImportData(file);
+          }
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+
+        return (
+          <div className="space-y-8">
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">團隊概況儀表板</h1>
+                <p className="text-slate-500">Connector Sync 管理中心</p>
+              </div>
+              
+              <div className="flex gap-2">
+                 <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  onChange={handleFileChange} 
+                  accept=".json" 
+                  className="hidden" 
+                />
+                <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="w-4 h-4" /> 匯入資料
+                </Button>
+                <Button variant="secondary" onClick={onExportData}>
+                  <Download className="w-4 h-4" /> 匯出資料
+                </Button>
+                <Button onClick={() => { setEditingUser(null); setIsUserModalOpen(true); }}>
+                  <Plus className="w-4 h-4" /> 新增成員
+                </Button>
+              </div>
+            </header>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {stats.map(({ user, activeTasks, totalEstimated, loadRate, isOverloaded }) => (
+                <Card key={user.id} className="p-6 hover:shadow-md transition-shadow relative group">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg ${user.avatarColor}`}>
+                        {user.name.charAt(0)}
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900">{user.name}</h3>
+                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                          <Badge className="w-3 h-3" />
+                          {user.employeeId}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button 
+                        onClick={() => handleOpenEditUser(user)}
+                        className="text-slate-300 hover:text-primary-500 p-2"
+                        title="編輯成員"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => setUserToDelete(user.id)}
+                        className="text-slate-300 hover:text-red-500 p-2"
+                        title="移除成員"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 py-4 border-t border-b border-slate-100">
+                      <div className="text-center border-r border-slate-100">
+                        <div className="text-2xl font-bold text-slate-900">{activeTasks}</div>
+                        <div className="text-xs text-slate-500">進行中任務</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-slate-900">{totalEstimated}h</div>
+                        <div className="text-xs text-slate-500">總預估工時</div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-sm mb-2">
+                        <span className="text-slate-600 font-medium flex items-center gap-2">
+                          <Activity className="w-4 h-4" /> 能量負載
+                        </span>
+                        <span className={`font-bold ${isOverloaded ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {Math.round(loadRate)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                        <div 
+                          className={`h-2.5 rounded-full transition-all duration-500 ${isOverloaded ? 'bg-red-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${loadRate}%` }}
+                        ></div>
+                      </div>
+                      {isOverloaded && (
+                        <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> 工作量可能過載，建議調整
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+
+            <UserModal 
+              isOpen={isUserModalOpen} 
+              onClose={() => { setIsUserModalOpen(false); setEditingUser(null); }} 
+              onSubmit={(data) => {
+                if (editingUser) {
+                  onUpdateUser(editingUser.id, data);
+                } else {
+                  onAddUser(data);
+                }
+              }} 
+              editingUser={editingUser}
+            />
+
+            <ConfirmModal 
+              isOpen={!!userToDelete}
+              onClose={() => setUserToDelete(null)}
+              onConfirm={() => {
+                if (userToDelete) onRemoveUser(userToDelete);
+              }}
+              title="移除成員確認"
+              message="確定要移除這位成員嗎？這將會導致該成員無法登入，且此操作無法復原。"
+              confirmText="確認移除"
+              isDanger={true}
+            />
+          </div>
+        );
+      };
+
+      const EngineerDashboard = ({ 
+        user, 
+        tasks, 
+        onAddTask, 
+        onUpdateTask,
+        onAddLog 
+      }) => {
+        const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+        const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+        const [activeTab, setActiveTab] = useState('ACTIVE');
+        const [selectedTask, setSelectedTask] = useState(null);
+        
+        // Confirmation states
+        const [taskToComplete, setTaskToComplete] = useState(null);
+        const [taskToRestore, setTaskToRestore] = useState(null);
+
+        const myTasks = tasks.filter(t => t.userId === user.id);
+        const activeTasks = myTasks.filter(t => t.status !== 'DONE');
+        const historyTasks = myTasks.filter(t => t.status === 'DONE');
+
+        const handleOpenLog = (task) => {
+          setSelectedTask(task);
+          setIsLogModalOpen(true);
+        };
+
+        const handleCompleteTask = (taskId) => {
+          onUpdateTask(taskId, { 
+            status: 'DONE', 
+            completedDate: new Date().toISOString().split('T')[0] 
+          });
+        };
+
+        const handleStartTask = (task) => {
+          const updates = {
+            status: 'IN_PROGRESS'
+          };
+          if (!task.startDate) {
+            updates.startDate = new Date().toISOString().split('T')[0];
+          }
+          onUpdateTask(task.id, updates);
+        };
+
+        const handlePauseTask = (taskId) => {
+          onUpdateTask(taskId, {
+            status: 'TODO'
+          });
+        };
+
+        const handleRestoreTask = (taskId) => {
+          onUpdateTask(taskId, {
+            status: 'IN_PROGRESS',
+            completedDate: undefined
+          });
+        };
+
+        return (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">早安, {user.name}</h1>
+                <p className="text-slate-500">這是您今日的工作概覽</p>
+              </div>
+              <div className="flex gap-3">
+                <div className="flex bg-slate-100 p-1 rounded-lg">
+                  <button 
+                    onClick={() => setActiveTab('ACTIVE')}
+                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'ACTIVE' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    進行中
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('HISTORY')}
+                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === 'HISTORY' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    歷史紀錄
+                  </button>
+                </div>
+                {activeTab === 'ACTIVE' && (
+                  <Button onClick={() => { setSelectedTask(null); setIsTaskModalOpen(true); }}>
+                    <Plus className="w-4 h-4" /> 建立任務
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              {(activeTab === 'ACTIVE' ? activeTasks : historyTasks).length === 0 && (
+                <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-300">
+                  <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Briefcase className="w-8 h-8 text-slate-400" />
+                  </div>
+                  <h3 className="text-lg font-medium text-slate-900">目前沒有任務</h3>
+                  <p className="text-slate-500">點擊右上方按鈕開始建立您的第一個任務</p>
+                </div>
+              )}
+
+              {(activeTab === 'ACTIVE' ? activeTasks : historyTasks).map(task => (
+                <Card key={task.id} className="p-5 flex flex-col md:flex-row gap-6 hover:border-primary-200 transition-colors">
+                  <div className="flex-1 space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-3 mb-1">
+                          <StatusBadge status={task.status} />
+                          <h3 className="font-bold text-lg text-slate-900">{task.title}</h3>
+                        </div>
+                        <p className="text-slate-600 text-sm leading-relaxed">{task.description}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-4 text-sm text-slate-500">
+                      <div className="flex items-center gap-1.5 min-w-[140px]">
+                        <Calendar className="w-4 h-4 text-slate-400" />
+                        <span>接收: {task.receiveDate}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 min-w-[140px]">
+                        <Clock className="w-4 h-4 text-slate-400" />
+                        <span>預計: <span className={new Date(task.deadline) < new Date() && task.status !== 'DONE' ? 'text-red-500 font-bold' : ''}>{task.deadline}</span></span>
+                      </div>
+                      {(task.startDate || task.status === 'IN_PROGRESS' || task.status === 'DONE') && (
+                        <div className="flex items-center gap-1.5 min-w-[140px]">
+                          <Play className="w-4 h-4 text-slate-400" />
+                          <span>開始: {task.startDate || '--'}</span>
+                        </div>
+                      )}
+                       {task.status === 'DONE' && (
+                        <div className="flex items-center gap-1.5 min-w-[140px]">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                          <span className="text-emerald-700 font-medium">完成: {task.completedDate}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Log Preview */}
+                    {task.logs.length > 0 && (
+                      <div className="mt-3 bg-slate-50 p-3 rounded-lg text-sm border border-slate-100">
+                        <div className="text-xs text-slate-400 font-medium mb-1">最新日誌 ({task.logs[0].date})</div>
+                        <div className="text-slate-700 line-clamp-1">{task.logs[0].content}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex md:flex-col justify-end gap-2 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6 min-w-[140px]">
+                    {activeTab === 'ACTIVE' ? (
+                      <>
+                        {task.status === 'TODO' ? (
+                          <Button 
+                            className="w-full justify-start" 
+                            onClick={() => handleStartTask(task)}
+                            variant={task.startDate ? "primary" : "primary"}
+                          >
+                            <Play className="w-4 h-4" /> 
+                            {task.startDate ? "恢復執行" : "開始執行"}
+                          </Button>
+                        ) : (
+                          <>
+                            <Button variant="secondary" className="w-full justify-start" onClick={() => handlePauseTask(task.id)}>
+                              <Pause className="w-4 h-4" /> 暫停任務
+                            </Button>
+                            <Button variant="secondary" className="w-full justify-start" onClick={() => handleOpenLog(task)}>
+                              <FileText className="w-4 h-4" /> 填寫日誌
+                            </Button>
+                            <Button className="w-full justify-start" onClick={() => setTaskToComplete(task.id)}>
+                              <CheckCircle2 className="w-4 h-4" /> 標記完成
+                            </Button>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-center py-2">
+                          <div className="text-xs text-slate-500">工時統計</div>
+                          <div className="font-medium text-slate-900">預計: {task.estimatedHours}h</div>
+                          <div className="font-medium text-slate-700">實際: {task.actualHours}h</div>
+                        </div>
+                        <Button variant="secondary" className="w-full mt-auto" onClick={() => setTaskToRestore(task.id)}>
+                          <Undo2 className="w-4 h-4" /> 復原任務
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </Card>
+              ))}
+            </div>
+
+            <TaskModal 
+              isOpen={isTaskModalOpen} 
+              onClose={() => { setIsTaskModalOpen(false); setSelectedTask(null); }} 
+              onSubmit={(data) => {
+                if (selectedTask) {
+                  onUpdateTask(selectedTask.id, data);
+                } else {
+                  onAddTask(data);
+                }
+              }}
+              editingTask={selectedTask}
+            />
+
+            {selectedTask && (
+              <LogModal 
+                isOpen={isLogModalOpen}
+                onClose={() => { setIsLogModalOpen(false); setSelectedTask(null); }}
+                onSubmit={(logData) => onAddLog(selectedTask.id, logData)}
+                taskTitle={selectedTask.title}
+              />
+            )}
+
+            {/* Confirmation Modals */}
+            <ConfirmModal 
+              isOpen={!!taskToComplete}
+              onClose={() => setTaskToComplete(null)}
+              onConfirm={() => {
+                if (taskToComplete) handleCompleteTask(taskToComplete);
+              }}
+              title="完成任務確認"
+              message="您確定要將此任務標記為完成嗎？這將會把它移至歷史紀錄中。"
+              confirmText="標記完成"
+            />
+
+            <ConfirmModal 
+              isOpen={!!taskToRestore}
+              onClose={() => setTaskToRestore(null)}
+              onConfirm={() => {
+                if (taskToRestore) handleRestoreTask(taskToRestore);
+              }}
+              title="復原任務確認"
+              message="您確定要將此任務退回進行中狀態嗎？"
+              confirmText="復原任務"
+            />
+          </div>
+        );
+      };
+
+      // --- App Root ---
+
+      const App = () => {
+        const [users, setUsers] = useState(() => {
+          const saved = localStorage.getItem('connector_users');
+          if (saved) {
+            // Basic migration for existing data if email key exists
+            const parsed = JSON.parse(saved);
+            if (parsed.length > 0 && parsed[0].email) {
+              return parsed.map((u) => ({
+                ...u,
+                employeeId: u.email.split('@')[0], // Simple migration
+                email: undefined 
+              }));
+            }
+            return parsed;
+          }
+          return INITIAL_USERS;
+        });
+
+        const [tasks, setTasks] = useState(() => {
+          const saved = localStorage.getItem('connector_tasks');
+          return saved ? JSON.parse(saved) : INITIAL_TASKS;
+        });
+
+        const [currentUser, setCurrentUser] = useState(null);
+        
+        // Import/Export States
+        const [pendingImportData, setPendingImportData] = useState(null);
+
+        // Persistence
+        useEffect(() => {
+          localStorage.setItem('connector_users', JSON.stringify(users));
+        }, [users]);
+
+        useEffect(() => {
+          localStorage.setItem('connector_tasks', JSON.stringify(tasks));
+        }, [tasks]);
+
+        // Actions
+        const handleAddUser = (userData) => {
+          const newUser = {
+            ...userData,
+            id: generateId(),
+            avatarColor: getRandomColor()
+          };
+          setUsers([...users, newUser]);
+        };
+
+        const handleUpdateUser = (id, userData) => {
+          setUsers(users.map(u => u.id === id ? { ...u, ...userData } : u));
+        };
+
+        const handleRemoveUser = (userId) => {
+          setUsers(users.filter(u => u.id !== userId));
+        };
+
+        const handleAddTask = (taskData) => {
+          if (!currentUser) return;
+          const newTask = {
+            ...taskData,
+            id: generateId(),
+            userId: currentUser.id,
+            status: 'TODO',
+            logs: [],
+            actualHours: 0
+          };
+          setTasks([newTask, ...tasks]);
+        };
+
+        const handleUpdateTask = (taskId, updates) => {
+          setTasks(tasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
+        };
+
+        const handleAddLog = (taskId, logData) => {
+          const newLog = {
+            id: generateId(),
+            date: new Date().toISOString().split('T')[0],
+            ...logData
+          };
+          
+          setTasks(tasks.map(t => {
+            if (t.id === taskId) {
+              const updates = {
+                actualHours: t.actualHours + logData.hoursSpent,
+                logs: [newLog, ...t.logs],
+                status: 'IN_PROGRESS' 
+              };
+              
+              if (!t.startDate) {
+                  updates.startDate = new Date().toISOString().split('T')[0];
+              }
+              
+              return {
+                ...t,
+                ...updates
+              };
+            }
+            return t;
+          }));
+        };
+
+        // --- Export / Import Logic ---
+        
+        const handleExportData = () => {
+          const data = {
+            version: '1.0',
+            timestamp: new Date().toISOString(),
+            users,
+            tasks
+          };
+          
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `connector_sync_data_${new Date().toISOString().split('T')[0]}.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        };
+
+        const handleImportData = (file) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const content = e.target.result;
+              const parsed = JSON.parse(content);
+              
+              if (!parsed.users || !parsed.tasks) {
+                alert("錯誤：檔案格式不正確");
+                return;
+              }
+              
+              setPendingImportData({ users: parsed.users, tasks: parsed.tasks });
+            } catch (err) {
+              alert("錯誤：無法解析檔案");
+            }
+          };
+          reader.readAsText(file);
+        };
+
+        const confirmImport = () => {
+          if (pendingImportData) {
+            setUsers(pendingImportData.users);
+            setTasks(pendingImportData.tasks);
+            setPendingImportData(null);
+            alert("資料匯入成功！");
+          }
+        };
+
+        if (!currentUser) {
+          return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+              <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
+                <div className="bg-primary-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-primary-600">
+                  <Briefcase className="w-10 h-10" />
+                </div>
+                <h1 className="text-3xl font-bold text-slate-900 mb-2">Connector Sync</h1>
+                <p className="text-slate-500 mb-8">請選擇您的身份登入系統</p>
+                
+                <div className="space-y-3">
+                  {users.map(user => (
+                    <button
+                      key={user.id}
+                      onClick={() => setCurrentUser(user)}
+                      className="w-full flex items-center p-3 rounded-xl border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition-all group"
+                    >
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${user.avatarColor} mr-4`}>
+                        {user.name.charAt(0)}
+                      </div>
+                      <div className="text-left flex-1">
+                        <div className="font-bold text-slate-900 group-hover:text-primary-700">{user.name}</div>
+                        <div className="text-xs text-slate-500 flex items-center gap-1">
+                          <Badge className="w-3 h-3" /> {user.employeeId} • {user.role === 'ADMIN' ? '管理員' : '工程師'}
+                        </div>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-primary-500" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="min-h-screen flex flex-col md:flex-row bg-slate-50">
+            {/* Sidebar */}
+            <aside className="bg-white w-full md:w-64 border-b md:border-r border-slate-200 flex-shrink-0">
+              <div className="p-6 border-b border-slate-100 flex items-center gap-3">
+                <div className="bg-primary-600 p-2 rounded-lg text-white">
+                  <Briefcase className="w-5 h-5" />
+                </div>
+                <span className="font-bold text-lg text-slate-900">Sync</span>
+              </div>
+              
+              <div className="p-4 space-y-2">
+                <div className="px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Menu</div>
+                <button 
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${currentUser.role === 'ADMIN' ? 'bg-primary-50 text-primary-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                  disabled={currentUser.role !== 'ADMIN'}
+                  onClick={() => {/* Navigate if router existed */}}
+                >
+                  <LayoutDashboard className="w-4 h-4" /> 總覽儀表板
+                </button>
+                <button 
+                   className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${currentUser.role === 'ENGINEER' ? 'bg-primary-50 text-primary-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                   disabled={currentUser.role !== 'ENGINEER'}
+                   onClick={() => {/* Navigate if router existed */}}
+                >
+                  <CheckCircle2 className="w-4 h-4" /> 我的任務
+                </button>
+              </div>
+
+              <div className="p-4 mt-auto border-t border-slate-100">
+                <div className="flex items-center gap-3 px-4 py-3 mb-2">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${currentUser.avatarColor}`}>
+                    {currentUser.name.charAt(0)}
+                  </div>
+                  <div className="overflow-hidden">
+                    <div className="font-bold text-sm text-slate-900 truncate">{currentUser.name}</div>
+                    <div className="text-xs text-slate-500 truncate">{currentUser.employeeId}</div>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setCurrentUser(null)}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                >
+                  <LogOut className="w-4 h-4" /> 登出系統
+                </button>
+              </div>
+            </aside>
+
+            {/* Main Content */}
+            <main className="flex-1 p-6 md:p-8 overflow-y-auto">
+              <div className="max-w-6xl mx-auto">
+                {currentUser.role === 'ADMIN' ? (
+                  <AdminDashboard 
+                    users={users} 
+                    tasks={tasks} 
+                    onAddUser={handleAddUser}
+                    onUpdateUser={handleUpdateUser}
+                    onRemoveUser={handleRemoveUser}
+                    onImportData={handleImportData}
+                    onExportData={handleExportData}
+                  />
+                ) : (
+                  <EngineerDashboard 
+                    user={currentUser} 
+                    tasks={tasks} 
+                    onAddTask={handleAddTask}
+                    onUpdateTask={handleUpdateTask}
+                    onAddLog={handleAddLog}
+                  />
+                )}
+              </div>
+            </main>
+
+             <ConfirmModal 
+              isOpen={!!pendingImportData}
+              onClose={() => setPendingImportData(null)}
+              onConfirm={confirmImport}
+              title="確認匯入資料"
+              message={
+                <div className="space-y-2">
+                  <p>您即將匯入新的資料檔案。這將會：</p>
+                  <ul className="list-disc pl-5 text-sm text-slate-600 space-y-1">
+                    <li><strong>覆蓋</strong> 目前系統中所有的成員與任務資料。</li>
+                    <li>若是從雲端硬碟讀取，這將同步成最新的版本。</li>
+                  </ul>
+                  <p className="font-bold text-slate-800 mt-2">請確認您已備份目前的資料，或確定要執行此操作？</p>
+                </div>
+              }
+              confirmText="確認覆蓋匯入"
+              isDanger={true}
+            />
+          </div>
+        );
+      };
+
+      const root = createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+  </body>
+</html>
